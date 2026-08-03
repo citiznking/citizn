@@ -1,0 +1,137 @@
+import "@supabase/functions-js/edge-runtime.d.ts";
+import { withSupabase } from "@supabase/server";
+import { createHash } from "node:crypto";
+
+const CATEGORIES = new Set([
+  "road", "hospital", "school", "traffic", "power", "water", "sanitation",
+  "environmental", "violence", "police_issue",
+]);
+const SEVERITIES = new Set(["low", "medium", "high", "critical"]);
+
+// Spec's Open Questions proposal (not yet formally confirmed): accept
+// when distance <= max(50m, device-reported accuracy). Server-side check
+// is the trust anchor; any client-side check is advisory only.
+const MIN_GEOFENCE_RADIUS_M = 50;
+const RATE_LIMIT_MAX_PER_HOUR = 5;
+
+function jsonError(message: string, status: number) {
+  return Response.json({ error: message }, { status });
+}
+
+export default {
+  fetch: withSupabase({ auth: "publishable" }, async (req, ctx) => {
+    if (req.method !== "POST") {
+      return jsonError("method not allowed", 405);
+    }
+
+    let body: Record<string, unknown>;
+    try {
+      body = await req.json();
+    } catch {
+      return jsonError("invalid JSON body", 400);
+    }
+
+    const {
+      country_slug, category, severity, description,
+      level1_id, pin_lat, pin_lng, device_lat, device_lng,
+      accuracy_m, session_uuid,
+    } = body;
+
+    if (typeof country_slug !== "string") return jsonError("country_slug is required", 400);
+    if (typeof category !== "string" || !CATEGORIES.has(category)) return jsonError("invalid category", 400);
+    if (typeof severity !== "string" || !SEVERITIES.has(severity)) return jsonError("invalid severity", 400);
+    if (typeof level1_id !== "string") return jsonError("level1_id is required", 400);
+    if (typeof pin_lat !== "number" || typeof pin_lng !== "number") return jsonError("pin_lat/pin_lng are required numbers", 400);
+    if (typeof device_lat !== "number" || typeof device_lng !== "number") return jsonError("device_lat/device_lng are required numbers", 400);
+    if (typeof accuracy_m !== "number" || accuracy_m < 0) return jsonError("accuracy_m is required", 400);
+    if (typeof session_uuid !== "string" || session_uuid.length < 16) return jsonError("session_uuid is required", 400);
+    if (description !== undefined && description !== null && typeof description !== "string") {
+      return jsonError("description must be a string", 400);
+    }
+    if (typeof description === "string" && description.length > 2000) return jsonError("description too long", 400);
+
+    const admin = ctx.supabaseAdmin;
+
+    const { data: country } = await admin
+      .from("countries")
+      .select("id, active")
+      .eq("url_slug", country_slug)
+      .maybeSingle();
+    if (!country || !country.active) return jsonError("unknown or inactive country", 400);
+
+    const { data: level1 } = await admin
+      .from("admin_level1")
+      .select("id")
+      .eq("id", level1_id)
+      .eq("country_id", country.id)
+      .maybeSingle();
+    if (!level1) return jsonError("level1_id does not belong to country_slug", 400);
+
+    // Server-side geofence: is the live device fix near the pin the
+    // reporter dropped? Proves physical presence at the reported issue.
+    const radius = Math.max(MIN_GEOFENCE_RADIUS_M, accuracy_m);
+    const { data: distance, error: distErr } = await admin.rpc("geofence_distance_m", {
+      lng1: pin_lng, lat1: pin_lat, lng2: device_lng, lat2: device_lat,
+    });
+    if (distErr) {
+      console.error("geofence rpc failed", distErr);
+      return jsonError("geofence check failed", 500);
+    }
+    if (typeof distance === "number" && distance > radius) {
+      return jsonError("device location is outside the geofence of the dropped pin", 422);
+    }
+
+    const salt = Deno.env.get("SESSION_SALT");
+    if (!salt) {
+      console.error("SESSION_SALT is not configured");
+      return jsonError("server misconfigured", 500);
+    }
+    const sessionHash = createHash("sha256").update(session_uuid + salt).digest("hex");
+
+    const windowStart = new Date();
+    windowStart.setMinutes(0, 0, 0);
+    const { data: withinLimit, error: rateErr } = await admin.rpc("check_and_increment_rate_limit", {
+      p_session_hash: sessionHash,
+      p_scope: "reports",
+      p_window_start: windowStart.toISOString(),
+      p_max_count: RATE_LIMIT_MAX_PER_HOUR,
+    });
+    if (rateErr) {
+      console.error("rate limit rpc failed", rateErr);
+      return jsonError("rate limit check failed", 500);
+    }
+    if (!withinLimit) {
+      return jsonError("rate limit exceeded, try again later", 429);
+    }
+
+    // violence/police_issue always need human review (also enforced by a
+    // DB trigger as a second line of defense — this isn't the only place
+    // that can never publish these directly).
+    const requiresHumanMod = category === "violence" || category === "police_issue";
+
+    const { data: inserted, error: insertErr } = await admin
+      .from("reports")
+      .insert({
+        country_id: country.id,
+        category,
+        severity,
+        description: description ?? null,
+        geom: `SRID=4326;POINT(${pin_lng} ${pin_lat})`,
+        accuracy_m,
+        level1_id,
+        level2_id: null,
+        status: requiresHumanMod ? "pending" : "published",
+        requires_human_mod: requiresHumanMod,
+        session_hash: sessionHash,
+      })
+      .select("id, status")
+      .single();
+
+    if (insertErr || !inserted) {
+      console.error("insert failed", insertErr);
+      return jsonError("failed to create report", 500);
+    }
+
+    return Response.json({ report_id: inserted.id, status: inserted.status }, { status: 201 });
+  }),
+};
