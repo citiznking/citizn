@@ -1,0 +1,18 @@
+-- Migration 000011 revoked EXECUTE on is_moderator() from anon, reasoning
+-- that anon calling it directly (returning false) leaks nothing and
+-- there's no reason to allow it. That was wrong: anon still needs
+-- EXECUTE to evaluate it as *part of* every RLS policy of the form
+-- `status = 'published' or is_moderator()` on reports, election_reports,
+-- report_media, lifecycle_events, result_entries, and incident_details.
+-- Postgres checks function-execute permission at plan time for the whole
+-- boolean expression, not just the branch that ends up mattering — so
+-- without this grant, anon gets "permission denied for function
+-- is_moderator" on every read of a published row, not just moderator-only
+-- rows. Confirmed by testing published_reports() end-to-end after wiring
+-- up the frontend; it failed with exactly this error.
+--
+-- `supabase db advisors` will go back to flagging this as
+-- anon_security_definer_function_executable (WARN) — known, understood,
+-- and necessary: the function returns a boolean derived only from
+-- auth.uid(), so direct anon calls leak nothing either way.
+grant execute on function public.is_moderator() to anon;
