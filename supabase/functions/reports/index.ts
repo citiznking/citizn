@@ -1,6 +1,6 @@
 import "@supabase/functions-js/edge-runtime.d.ts";
 import { withSupabase } from "@supabase/server";
-import { createHash } from "node:crypto";
+import { createHash, randomBytes } from "node:crypto";
 
 const CATEGORIES = new Set([
   "road", "hospital", "school", "traffic", "power", "water", "sanitation",
@@ -34,7 +34,7 @@ export default {
     const {
       country_slug, category, severity, description,
       level1_id, pin_lat, pin_lng, device_lat, device_lng,
-      accuracy_m, session_uuid,
+      accuracy_m, session_uuid, campaign_slug,
     } = body;
 
     if (typeof country_slug !== "string") return jsonError("country_slug is required", 400);
@@ -49,6 +49,9 @@ export default {
       return jsonError("description must be a string", 400);
     }
     if (typeof description === "string" && description.length > 2000) return jsonError("description too long", 400);
+    if (campaign_slug !== undefined && campaign_slug !== null && typeof campaign_slug !== "string") {
+      return jsonError("campaign_slug must be a string", 400);
+    }
 
     const admin = ctx.supabaseAdmin;
 
@@ -66,6 +69,23 @@ export default {
       .eq("country_id", country.id)
       .maybeSingle();
     if (!level1) return jsonError("level1_id does not belong to country_slug", 400);
+
+    let campaignId: string | null = null;
+    if (typeof campaign_slug === "string") {
+      const { data: campaign } = await admin
+        .from("campaigns")
+        .select("id, status, starts_at, ends_at")
+        .eq("country_id", country.id)
+        .eq("slug", campaign_slug)
+        .maybeSingle();
+      const now = Date.now();
+      const withinWindow = !!campaign
+        && campaign.status === "active"
+        && new Date(campaign.starts_at).getTime() <= now
+        && (!campaign.ends_at || new Date(campaign.ends_at).getTime() >= now);
+      if (!withinWindow) return jsonError("unknown or inactive campaign", 400);
+      campaignId = campaign!.id;
+    }
 
     // Server-side geofence: is the live device fix near the pin the
     // reporter dropped? Proves physical presence at the reported issue.
@@ -120,6 +140,7 @@ export default {
         accuracy_m,
         level1_id,
         level2_id: null,
+        campaign_id: campaignId,
         status: requiresHumanMod ? "pending" : "published",
         requires_human_mod: requiresHumanMod,
         session_hash: sessionHash,
@@ -132,6 +153,28 @@ export default {
       return jsonError("failed to create report", 500);
     }
 
-    return Response.json({ report_id: inserted.id, status: inserted.status }, { status: 201 });
+    // The claim token is 256 bits of server-side randomness, unrelated to
+    // session_hash or anything else the server retains — only its hash is
+    // stored, and there is no lookup path from report/session back to a
+    // claim. Returned once, here; the reporter alone is responsible for it.
+    let claimToken: string | undefined;
+    if (campaignId) {
+      claimToken = randomBytes(32).toString("base64url");
+      const tokenHash = createHash("sha256").update(claimToken).digest("hex");
+      const { error: claimErr } = await admin.from("campaign_claims").insert({
+        campaign_id: campaignId,
+        report_id: inserted.id,
+        token_hash: tokenHash,
+      });
+      if (claimErr) {
+        console.error("campaign claim insert failed", claimErr);
+        claimToken = undefined;
+      }
+    }
+
+    return Response.json(
+      { report_id: inserted.id, status: inserted.status, claim_token: claimToken },
+      { status: 201 },
+    );
   }),
 };

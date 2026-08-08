@@ -1,11 +1,14 @@
 <script lang="ts">
 	import { onMount, onDestroy } from 'svelte';
+	import { page } from '$app/state';
 	import { Map as MlMap, Marker, type StyleSpecification } from 'maplibre-gl';
 	import 'maplibre-gl/dist/maplibre-gl.css';
 	import { supabase } from '$lib/supabase';
 	import { getSessionUuid } from '$lib/session';
 	import { REPORT_CATEGORIES, REPORT_SEVERITIES } from '$lib/reports';
 	import { PUBLIC_SUPABASE_URL } from '$env/static/public';
+
+	const campaignSlug = page.url.searchParams.get('campaign');
 
 	let mapContainer: HTMLDivElement = $state()!;
 	let map: MlMap;
@@ -27,8 +30,10 @@
 	let level1Id = $state('');
 
 	let submitting = $state(false);
-	let result: { ok: true; reportId: string; status: string } | { ok: false; error: string } | null =
-		$state(null);
+	let result:
+		| { ok: true; reportId: string; status: string; claimToken?: string }
+		| { ok: false; error: string }
+		| null = $state(null);
 
 	const OSM_STYLE: StyleSpecification = {
 		version: 8,
@@ -127,13 +132,19 @@
 					device_lng: deviceLng,
 					accuracy_m: accuracyM,
 					session_uuid: getSessionUuid(),
+					campaign_slug: campaignSlug || undefined,
 				}),
 			});
 			const body = await res.json();
 			if (!res.ok) {
 				result = { ok: false, error: body.error ?? `request failed (${res.status})` };
 			} else {
-				result = { ok: true, reportId: body.report_id, status: body.status };
+				result = {
+					ok: true,
+					reportId: body.report_id,
+					status: body.status,
+					claimToken: body.claim_token,
+				};
 			}
 		} catch (err) {
 			result = { ok: false, error: (err as Error).message };
@@ -145,6 +156,9 @@
 
 <h1>Report it — help your LGA plan repairs</h1>
 <p>No signup. Your location is only used to confirm you're at the issue — nothing about you is stored.</p>
+{#if campaignSlug}
+	<p>Reporting as part of the <strong>{campaignSlug}</strong> campaign.</p>
+{/if}
 
 {#if locating}
 	<p>Getting your location…</p>
@@ -202,6 +216,13 @@
 					(this category is reviewed by a moderator before it appears publicly)
 				{/if}
 			</p>
+			{#if result.claimToken}
+				<div role="alert" style="border: 2px solid; padding: 1rem; margin-top: 1rem;">
+					<p><strong>Save this code — it's the only way to claim a reward if you win.</strong></p>
+					<p>We don't keep any way to link it back to you or this device, so we can't recover it if it's lost.</p>
+					<code style="font-size: 1.1rem; user-select: all;">{result.claimToken}</code>
+				</div>
+			{/if}
 		{:else}
 			<p role="alert">Error: {result.error}</p>
 		{/if}
