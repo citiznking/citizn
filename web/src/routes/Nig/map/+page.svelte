@@ -1,10 +1,11 @@
 <script lang="ts">
 	import { onMount, onDestroy } from 'svelte';
-	import { Map as MlMap, Marker, type StyleSpecification } from 'maplibre-gl';
+	import { Map as MlMap, Marker } from 'maplibre-gl';
 	import 'maplibre-gl/dist/maplibre-gl.css';
 	import { supabase } from '$lib/supabase';
 	import { getCategory, CATEGORIES } from '$lib/design/categories';
 	import { SEVERITY, SEVERITY_RADIUS } from '$lib/design/severity';
+	import { MAP_STYLE } from '$lib/mapStyle';
 	import ReportCard from '$lib/components/ReportCard.svelte';
 
 	interface Row {
@@ -28,19 +29,6 @@
 	let map: MlMap;
 	const markers: Marker[] = [];
 
-	const OSM_STYLE: StyleSpecification = {
-		version: 8,
-		sources: {
-			osm: {
-				type: 'raster',
-				tiles: ['https://tile.openstreetmap.org/{z}/{x}/{y}.png'],
-				tileSize: 256,
-				attribution: '&copy; OpenStreetMap contributors',
-			},
-		},
-		layers: [{ id: 'osm', type: 'raster', source: 'osm' }],
-	};
-
 	onMount(async () => {
 		const [{ data }, { data: levels }] = await Promise.all([
 			supabase.rpc('published_reports', { p_country_slug: 'Nig' }),
@@ -49,7 +37,7 @@
 		reports = (data ?? []) as Row[];
 		levelNames = Object.fromEntries((levels ?? []).map((l: any) => [l.id, l.name]));
 
-		map = new MlMap({ container: mapContainer, style: OSM_STYLE, center: [8.6753, 9.082], zoom: 5.5 });
+		map = new MlMap({ container: mapContainer, style: MAP_STYLE, center: [8.6753, 9.082], zoom: 5.5 });
 
 		for (const r of reports) {
 			const cat = getCategory(r.category);

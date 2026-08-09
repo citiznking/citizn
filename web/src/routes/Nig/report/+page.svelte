@@ -1,8 +1,9 @@
 <script lang="ts">
 	import { onDestroy } from 'svelte';
 	import { page } from '$app/state';
-	import { Map as MlMap, Marker, type StyleSpecification } from 'maplibre-gl';
+	import { Map as MlMap, Marker } from 'maplibre-gl';
 	import 'maplibre-gl/dist/maplibre-gl.css';
+	import { MAP_STYLE } from '$lib/mapStyle';
 	import { supabase } from '$lib/supabase';
 	import { getSessionUuid } from '$lib/session';
 	import { CATEGORIES, SENSITIVE_CATEGORIES, getCategory } from '$lib/design/categories';
@@ -175,22 +176,9 @@
 	}
 	requestLocation();
 
-	const OSM_STYLE: StyleSpecification = {
-		version: 8,
-		sources: {
-			osm: {
-				type: 'raster',
-				tiles: ['https://tile.openstreetmap.org/{z}/{x}/{y}.png'],
-				tileSize: 256,
-				attribution: '&copy; OpenStreetMap contributors',
-			},
-		},
-		layers: [{ id: 'osm', type: 'raster', source: 'osm' }],
-	};
-
 	$effect(() => {
 		if (step === 2 && mapContainer && !map && pinLat !== null && pinLng !== null) {
-			map = new MlMap({ container: mapContainer, style: OSM_STYLE, center: [pinLng, pinLat], zoom: 16 });
+			map = new MlMap({ container: mapContainer, style: MAP_STYLE, center: [pinLng, pinLat], zoom: 16 });
 			marker = new Marker({ draggable: true }).setLngLat([pinLng, pinLat]).addTo(map);
 			marker.on('dragend', () => {
 				const { lat, lng } = marker!.getLngLat();
