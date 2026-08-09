@@ -91,7 +91,10 @@ revoke all on public.reward_codes from anon, authenticated;
 
 -- Extend the anon-facing read RPC with campaign_id so the frontend can
 -- filter a campaign page down to that campaign's published reports.
-create or replace function public.published_reports(p_country_slug text)
+-- Postgres won't let CREATE OR REPLACE change a table-returning
+-- function's output columns, so drop it first.
+drop function if exists public.published_reports(text);
+create function public.published_reports(p_country_slug text)
 returns table (
   id uuid, category report_category, severity report_severity, description text,
   lng double precision, lat double precision, accuracy_m numeric,

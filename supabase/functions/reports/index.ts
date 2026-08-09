@@ -7,6 +7,7 @@ const CATEGORIES = new Set([
   "environmental", "violence", "police_issue",
 ]);
 const SEVERITIES = new Set(["low", "medium", "high", "critical"]);
+const X_HANDLE_RE = /^[A-Za-z0-9_]{1,15}$/;
 
 // Spec's Open Questions proposal (not yet formally confirmed): accept
 // when distance <= max(50m, device-reported accuracy). Server-side check
@@ -34,7 +35,7 @@ export default {
     const {
       country_slug, category, severity, description,
       level1_id, pin_lat, pin_lng, device_lat, device_lng,
-      accuracy_m, session_uuid, campaign_slug,
+      accuracy_m, session_uuid, campaign_slug, reporter_x_handle,
     } = body;
 
     if (typeof country_slug !== "string") return jsonError("country_slug is required", 400);
@@ -51,6 +52,13 @@ export default {
     if (typeof description === "string" && description.length > 2000) return jsonError("description too long", 400);
     if (campaign_slug !== undefined && campaign_slug !== null && typeof campaign_slug !== "string") {
       return jsonError("campaign_slug must be a string", 400);
+    }
+    let xHandle: string | null = null;
+    if (reporter_x_handle !== undefined && reporter_x_handle !== null && reporter_x_handle !== "") {
+      if (typeof reporter_x_handle !== "string") return jsonError("reporter_x_handle must be a string", 400);
+      const stripped = reporter_x_handle.replace(/^@/, "");
+      if (!X_HANDLE_RE.test(stripped)) return jsonError("invalid reporter_x_handle", 400);
+      xHandle = stripped;
     }
 
     const admin = ctx.supabaseAdmin;
@@ -128,6 +136,10 @@ export default {
     // DB trigger as a second line of defense — this isn't the only place
     // that can never publish these directly).
     const requiresHumanMod = category === "violence" || category === "police_issue";
+    // Primary defense against self-identifying on a report that exists to
+    // let someone flag police misconduct/insecurity anonymously — the DB
+    // trigger strips it too, but don't rely on that alone.
+    if (requiresHumanMod) xHandle = null;
 
     const { data: inserted, error: insertErr } = await admin
       .from("reports")
@@ -141,6 +153,7 @@ export default {
         level1_id,
         level2_id: null,
         campaign_id: campaignId,
+        reporter_x_handle: xHandle,
         status: requiresHumanMod ? "pending" : "published",
         requires_human_mod: requiresHumanMod,
         session_hash: sessionHash,

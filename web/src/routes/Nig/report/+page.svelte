@@ -26,8 +26,15 @@
 	let category = $state('road');
 	let severity = $state('medium');
 	let description = $state('');
+	let xHandle = $state('');
 	let levels: { id: string; name: string }[] = $state([]);
 	let level1Id = $state('');
+
+	const SENSITIVE_CATEGORIES = new Set(['violence', 'police_issue']);
+	let showXHandle = $derived(!SENSITIVE_CATEGORIES.has(category));
+	$effect(() => {
+		if (!showXHandle) xHandle = '';
+	});
 
 	let submitting = $state(false);
 	let result:
@@ -133,6 +140,7 @@
 					accuracy_m: accuracyM,
 					session_uuid: getSessionUuid(),
 					campaign_slug: campaignSlug || undefined,
+					reporter_x_handle: showXHandle && xHandle ? xHandle : undefined,
 				}),
 			});
 			const body = await res.json();
@@ -202,6 +210,17 @@
 			Description (optional)
 			<textarea bind:value={description} maxlength="2000" rows="3"></textarea>
 		</label>
+
+		{#if showXHandle}
+			<label>
+				Your X handle (optional)
+				<input type="text" bind:value={xHandle} maxlength="16" placeholder="e.g. yourhandle" />
+			</label>
+			<p><small>
+				If this report gets shared on Citizn's X account, we'll tag you so your network can see and
+				repost it. Leave blank to stay anonymous — this is never required.
+			</small></p>
+		{/if}
 
 		<button type="submit" disabled={submitting}>
 			{submitting ? 'Submitting…' : 'Submit report'}
