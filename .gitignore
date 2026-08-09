@@ -9,3 +9,6 @@ build/
 .claude/
 supabase/.temp/
 supabase/.branches/
+
+# Local Netlify folder
+.netlify
