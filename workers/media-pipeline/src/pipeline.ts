@@ -4,6 +4,7 @@ import { applyWatermark } from './watermark.js';
 import { isMetadataClean } from './verify.js';
 import { sha256Hex, averageHashHex } from './hash.js';
 import { computeSafetyScore } from './safety.js';
+import { processVideo as transcodeVideo, isVideoMetadataClean } from './video.js';
 
 interface PendingMedia {
   id: string;
@@ -26,11 +27,10 @@ async function reject(
 }
 
 /**
- * Video gets hash + dedup only, no watermark and no safety scoring —
- * watermarking video needs ffmpeg (a real dependency not yet added to
- * this worker) and the safety score is a stub for images too (see
- * safety.ts), so skipping it here isn't a regression, just an honest
- * reflection that no video is screened yet either.
+ * Video mirrors the image pipeline's shape (watermark -> verify clean ->
+ * hash/dedup -> upload) using ffmpeg instead of sharp. Safety scoring is
+ * still a stub (see safety.ts) — that's a real gap shared with images,
+ * not something video is worse off on.
  */
 async function processVideo(supabase: SupabaseClient, media: PendingMedia): Promise<void> {
   const download = await supabase.storage.from(config.quarantineBucket).download(media.storage_path);
@@ -39,7 +39,21 @@ async function processVideo(supabase: SupabaseClient, media: PendingMedia): Prom
     return;
   }
   const original = Buffer.from(await download.data.arrayBuffer());
-  const sha256 = sha256Hex(original);
+
+  let processed: Buffer;
+  try {
+    processed = await transcodeVideo(original);
+  } catch (err) {
+    await reject(supabase, media, `unsupported or corrupt video: ${(err as Error).message}`);
+    return;
+  }
+
+  if (!(await isVideoMetadataClean(processed))) {
+    await reject(supabase, media, 'metadata not verifiably clean after strip');
+    return;
+  }
+
+  const sha256 = sha256Hex(processed);
 
   const dupe = await supabase
     .from('report_media')
@@ -54,7 +68,7 @@ async function processVideo(supabase: SupabaseClient, media: PendingMedia): Prom
 
   const upload = await supabase.storage
     .from(config.cleanBucket)
-    .upload(media.storage_path, original, { contentType: 'video/mp4', upsert: false });
+    .upload(media.storage_path, processed, { contentType: 'video/mp4', upsert: false });
   if (upload.error) {
     await reject(supabase, media, `clean-bucket upload failed: ${upload.error.message}`);
     return;
@@ -64,10 +78,10 @@ async function processVideo(supabase: SupabaseClient, media: PendingMedia): Prom
 
   await supabase
     .from('report_media')
-    .update({ sha256, processing_status: 'clean' })
+    .update({ sha256, exif_clean: true, watermarked: true, processing_status: 'clean' })
     .eq('id', media.id);
 
-  console.log(`[clean] ${media.id} -> ${config.cleanBucket}/${media.storage_path} (video, unscreened)`);
+  console.log(`[clean] ${media.id} -> ${config.cleanBucket}/${media.storage_path} (video)`);
 }
 
 export async function processOne(supabase: SupabaseClient, media: PendingMedia): Promise<void> {
