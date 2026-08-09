@@ -78,7 +78,10 @@
 		.order('name')
 		.then(({ data }) => {
 			levels = (data ?? []).map((r: any) => ({ id: r.id, name: r.name }));
-			if (levels.length > 0) level1Id = levels[0].id;
+			// Fallback only — overwritten below the moment a device fix
+			// resolves to a real nearest-state match. Without this, a
+			// failed/denied location leaves the dropdown on nothing.
+			if (levels.length > 0 && !level1Id) level1Id = levels[0].id;
 		});
 
 	function requestLocation() {
@@ -93,6 +96,16 @@
 				pinLat = deviceLat;
 				pinLng = deviceLng;
 				locating = false;
+				// Auto-pick the reporter's actual state instead of leaving
+				// the alphabetically-first one selected — was showing
+				// "Abia" for everyone regardless of where they actually
+				// were, which is just wrong, not a style choice.
+				supabase
+					.rpc('nearest_admin_level1', { p_country_slug: 'Nig', p_lat: deviceLat, p_lng: deviceLng })
+					.then(({ data }) => {
+						const match = data?.[0];
+						if (match) level1Id = match.id;
+					});
 			},
 			(err) => {
 				locationError = err.message;
