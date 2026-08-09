@@ -34,10 +34,38 @@ export default {
     } catch {
       return jsonError("invalid JSON body", 400);
     }
-    const { report_id, action, reason } = body;
+    const { report_id, action, reason, target_table } = body;
     if (typeof report_id !== "string") return jsonError("report_id is required", 400);
     if (action !== "approve" && action !== "reject") return jsonError("action must be approve or reject", 400);
     if (reason !== undefined && typeof reason !== "string") return jsonError("reason must be a string", 400);
+    const table = target_table === "election_reports" ? "election_reports" : "reports";
+    if (target_table !== undefined && target_table !== "reports" && target_table !== "election_reports") {
+      return jsonError("target_table must be 'reports' or 'election_reports'", 400);
+    }
+
+    // Election incidents have no campaign/X-post logic — moderate and
+    // audit-log them, then stop, rather than dragging the reports-only
+    // branch below along for a table it doesn't apply to.
+    if (table === "election_reports") {
+      const { data: incident } = await admin
+        .from("election_reports")
+        .select("id, status")
+        .eq("id", report_id)
+        .maybeSingle();
+      if (!incident) return jsonError("election report not found", 404);
+      if (incident.status !== "pending") return jsonError(`election report is already ${incident.status}, not pending`, 409);
+
+      const newStatus = action === "approve" ? "published" : "removed";
+      await admin.from("election_reports").update({ status: newStatus }).eq("id", report_id);
+      await admin.from("moderation_actions").insert({
+        moderator_id: moderator.user_id,
+        target_table: "election_reports",
+        target_id: report_id,
+        action: action === "approve" ? "approve" : "reject",
+        reason: reason ?? null,
+      });
+      return Response.json({ status: newStatus });
+    }
 
     const { data: report } = await admin
       .from("reports")
