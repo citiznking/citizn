@@ -21,9 +21,12 @@ export default {
       return jsonError("invalid JSON body", 400);
     }
 
-    const { token } = body;
+    const { token, network_provider_id } = body;
     if (typeof token !== "string" || token.length < 32 || token.length > 128) {
       return jsonError("invalid claim token", 400);
+    }
+    if (network_provider_id !== undefined && typeof network_provider_id !== "string") {
+      return jsonError("network_provider_id must be a string", 400);
     }
 
     const admin = ctx.supabaseAdmin;
@@ -52,7 +55,7 @@ export default {
     const tokenHash = createHash("sha256").update(token).digest("hex");
     const { data: claim } = await admin
       .from("campaign_claims")
-      .select("id, status")
+      .select("id, status, campaign_id")
       .eq("token_hash", tokenHash)
       .maybeSingle();
 
@@ -65,21 +68,62 @@ export default {
     }
 
     if (claim.status === "won") {
+      // Network isn't known until redemption (collected here, not at
+      // submission, so non-winners never hand it over for nothing) — a
+      // reward_code isn't assigned until we know which network's pin to
+      // hand out, so this is a two-step flow: first call (no
+      // network_provider_id) reveals the picker, second one redeems.
+      const { data: campaign } = await admin
+        .from("campaigns")
+        .select("country_id")
+        .eq("id", claim.campaign_id)
+        .maybeSingle();
+
+      if (!network_provider_id) {
+        const { data: providers } = await admin
+          .from("network_providers")
+          .select("id, name, code")
+          .eq("country_id", campaign?.country_id);
+        return Response.json({
+          status: "won",
+          needs_network_provider: true,
+          network_providers: providers ?? [],
+        });
+      }
+
+      const { data: provider } = await admin
+        .from("network_providers")
+        .select("id")
+        .eq("id", network_provider_id)
+        .eq("country_id", campaign?.country_id)
+        .maybeSingle();
+      if (!provider) return jsonError("invalid network_provider_id for this campaign's country", 400);
+
+      // for update skip locked: two winners racing for the last code on
+      // the same network never get the same one.
       const { data: rewardCode, error: rcErr } = await admin
         .from("reward_codes")
-        .update({ status: "redeemed", redeemed_at: new Date().toISOString() })
-        .eq("assigned_claim_id", claim.id)
-        .eq("status", "assigned")
-        .select("code, value_amount, currency")
+        .update({ status: "assigned", assigned_claim_id: claim.id })
+        .eq("campaign_id", claim.campaign_id)
+        .eq("network_provider_id", network_provider_id)
+        .eq("status", "available")
+        .select("id, code, value_amount, currency")
+        .limit(1)
         .maybeSingle();
       if (rcErr || !rewardCode) {
-        console.error("reward code redemption failed", rcErr);
-        return jsonError("failed to redeem reward, contact support", 500);
+        console.error("no available reward code for network", claim.campaign_id, network_provider_id, rcErr);
+        return jsonError("no codes available for that network right now — try a different network or contact support", 409);
       }
+
+      await admin
+        .from("reward_codes")
+        .update({ status: "redeemed", redeemed_at: new Date().toISOString() })
+        .eq("id", rewardCode.id);
       await admin
         .from("campaign_claims")
         .update({ status: "redeemed", redeemed_at: new Date().toISOString() })
         .eq("id", claim.id);
+
       return Response.json({
         status: "redeemed",
         code: rewardCode.code,

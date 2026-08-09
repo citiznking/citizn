@@ -9,6 +9,7 @@ interface PendingMedia {
   id: string;
   report_id: string;
   storage_path: string;
+  media_type: 'image' | 'video';
 }
 
 async function reject(
@@ -24,6 +25,51 @@ async function reject(
   console.log(`[reject] ${media.id}: ${reason}`);
 }
 
+/**
+ * Video gets hash + dedup only, no watermark and no safety scoring —
+ * watermarking video needs ffmpeg (a real dependency not yet added to
+ * this worker) and the safety score is a stub for images too (see
+ * safety.ts), so skipping it here isn't a regression, just an honest
+ * reflection that no video is screened yet either.
+ */
+async function processVideo(supabase: SupabaseClient, media: PendingMedia): Promise<void> {
+  const download = await supabase.storage.from(config.quarantineBucket).download(media.storage_path);
+  if (download.error || !download.data) {
+    await reject(supabase, media, `download failed: ${download.error?.message ?? 'unknown'}`);
+    return;
+  }
+  const original = Buffer.from(await download.data.arrayBuffer());
+  const sha256 = sha256Hex(original);
+
+  const dupe = await supabase
+    .from('report_media')
+    .select('id')
+    .eq('sha256', sha256)
+    .neq('id', media.id)
+    .limit(1);
+  if (dupe.data && dupe.data.length > 0) {
+    await reject(supabase, media, `exact duplicate of report_media ${dupe.data[0].id}`);
+    return;
+  }
+
+  const upload = await supabase.storage
+    .from(config.cleanBucket)
+    .upload(media.storage_path, original, { contentType: 'video/mp4', upsert: false });
+  if (upload.error) {
+    await reject(supabase, media, `clean-bucket upload failed: ${upload.error.message}`);
+    return;
+  }
+
+  await supabase.storage.from(config.quarantineBucket).remove([media.storage_path]);
+
+  await supabase
+    .from('report_media')
+    .update({ sha256, processing_status: 'clean' })
+    .eq('id', media.id);
+
+  console.log(`[clean] ${media.id} -> ${config.cleanBucket}/${media.storage_path} (video, unscreened)`);
+}
+
 export async function processOne(supabase: SupabaseClient, media: PendingMedia): Promise<void> {
   const claimed = await supabase
     .from('report_media')
@@ -33,6 +79,11 @@ export async function processOne(supabase: SupabaseClient, media: PendingMedia):
     .select('id');
   if (claimed.error || !claimed.data || claimed.data.length === 0) {
     // Another worker instance already claimed this row; skip.
+    return;
+  }
+
+  if (media.media_type === 'video') {
+    await processVideo(supabase, media);
     return;
   }
 
@@ -107,7 +158,7 @@ export async function processOne(supabase: SupabaseClient, media: PendingMedia):
 export async function processPendingBatch(supabase: SupabaseClient): Promise<number> {
   const { data, error } = await supabase
     .from('report_media')
-    .select('id, report_id, storage_path')
+    .select('id, report_id, storage_path, media_type')
     .eq('processing_status', 'pending')
     .limit(config.batchSize);
 

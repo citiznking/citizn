@@ -79,10 +79,12 @@ export default {
     if (!level1) return jsonError("level1_id does not belong to country_slug", 400);
 
     let campaignId: string | null = null;
+    let campaignMinSubmissions = 1;
+    let campaignRewardMode: "raffle" | "first_n" = "raffle";
     if (typeof campaign_slug === "string") {
       const { data: campaign } = await admin
         .from("campaigns")
-        .select("id, status, starts_at, ends_at")
+        .select("id, status, starts_at, ends_at, min_submissions, reward_mode")
         .eq("country_id", country.id)
         .eq("slug", campaign_slug)
         .maybeSingle();
@@ -93,6 +95,8 @@ export default {
         && (!campaign.ends_at || new Date(campaign.ends_at).getTime() >= now);
       if (!withinWindow) return jsonError("unknown or inactive campaign", 400);
       campaignId = campaign!.id;
+      campaignMinSubmissions = campaign!.min_submissions;
+      campaignRewardMode = campaign!.reward_mode;
     }
 
     // Server-side geofence: is the live device fix near the pin the
@@ -170,27 +174,82 @@ export default {
       return jsonError("failed to create report", 500);
     }
 
-    // The claim token is 256 bits of server-side randomness, unrelated to
-    // session_hash or anything else the server retains — only its hash is
-    // stored, and there is no lookup path from report/session back to a
-    // claim. Returned once, here; the reporter alone is responsible for it.
+    // Progress and claims only count for reports that actually publish —
+    // an unmoderated (or later-rejected) sensitive-category report
+    // shouldn't hold reward eligibility. There's no moderation console
+    // yet to flip pending -> published, so campaign progress on those
+    // categories simply doesn't accrue until that exists and is wired to
+    // run this same logic on approval.
     let claimToken: string | undefined;
-    if (campaignId) {
-      claimToken = randomBytes(32).toString("base64url");
-      const tokenHash = createHash("sha256").update(claimToken).digest("hex");
-      const { error: claimErr } = await admin.from("campaign_claims").insert({
-        campaign_id: campaignId,
-        report_id: inserted.id,
-        token_hash: tokenHash,
-      });
-      if (claimErr) {
-        console.error("campaign claim insert failed", claimErr);
-        claimToken = undefined;
+    let progress: { submission_count: number; min_submissions: number } | undefined;
+    let wonImmediately = false;
+
+    if (campaignId && inserted.status === "published") {
+      const { data: existing } = await admin
+        .from("campaign_progress")
+        .select("id, submission_count, claim_id")
+        .eq("campaign_id", campaignId)
+        .eq("session_hash", sessionHash)
+        .maybeSingle();
+
+      const newCount = (existing?.submission_count ?? 0) + 1;
+      let progressId: string;
+      if (existing) {
+        progressId = existing.id;
+        await admin
+          .from("campaign_progress")
+          .update({ submission_count: newCount, updated_at: new Date().toISOString() })
+          .eq("id", existing.id);
+      } else {
+        const { data: created } = await admin
+          .from("campaign_progress")
+          .insert({ campaign_id: campaignId, session_hash: sessionHash, submission_count: 1 })
+          .select("id")
+          .single();
+        progressId = created!.id;
+      }
+
+      progress = { submission_count: newCount, min_submissions: campaignMinSubmissions };
+
+      // The claim token is 256 bits of server-side randomness, unrelated
+      // to session_hash or anything else the server retains — only its
+      // hash is stored, and there is no PostgREST-reachable lookup path
+      // back to it. Returned once, here, only on the submission that
+      // actually crosses the threshold; the reporter alone holds it after.
+      if (newCount >= campaignMinSubmissions && !existing?.claim_id) {
+        claimToken = randomBytes(32).toString("base64url");
+        const tokenHash = createHash("sha256").update(claimToken).digest("hex");
+        const { data: claim, error: claimErr } = await admin
+          .from("campaign_claims")
+          .insert({ campaign_id: campaignId, report_id: inserted.id, session_hash: sessionHash, token_hash: tokenHash })
+          .select("id")
+          .single();
+
+        if (claimErr || !claim) {
+          console.error("campaign claim insert failed", claimErr);
+          claimToken = undefined;
+        } else {
+          await admin.from("campaign_progress").update({ claim_id: claim.id }).eq("id", progressId);
+          if (campaignRewardMode === "first_n") {
+            const { data: won, error: slotErr } = await admin.rpc("claim_first_n_slot", {
+              p_campaign_id: campaignId,
+              p_claim_id: claim.id,
+            });
+            if (slotErr) console.error("claim_first_n_slot rpc failed", slotErr);
+            wonImmediately = !!won;
+          }
+        }
       }
     }
 
     return Response.json(
-      { report_id: inserted.id, status: inserted.status, claim_token: claimToken },
+      {
+        report_id: inserted.id,
+        status: inserted.status,
+        claim_token: claimToken,
+        campaign_progress: progress,
+        won_immediately: wonImmediately,
+      },
       { status: 201 },
     );
   }),

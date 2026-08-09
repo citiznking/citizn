@@ -39,9 +39,94 @@
 
 	let submitting = $state(false);
 	let result:
-		| { ok: true; reportId: string; status: string; claimToken?: string }
+		| {
+				ok: true;
+				reportId: string;
+				status: string;
+				claimToken?: string;
+				campaignProgress?: { submission_count: number; min_submissions: number };
+				wonImmediately?: boolean;
+		  }
 		| { ok: false; error: string }
 		| null = $state(null);
+
+	const MAX_VIDEO_DURATION_S = 140;
+	const MAX_FILE_SIZE = 83886080; // 80MB
+	let mediaUploading = $state(false);
+	let mediaResult: { ok: true } | { ok: false; error: string } | null = $state(null);
+	let mediaInput: HTMLInputElement | undefined = $state();
+
+	function videoDuration(file: File): Promise<number> {
+		return new Promise((resolve, reject) => {
+			const el = document.createElement('video');
+			el.preload = 'metadata';
+			el.onloadedmetadata = () => {
+				URL.revokeObjectURL(el.src);
+				resolve(el.duration);
+			};
+			el.onerror = () => reject(new Error('could not read video metadata'));
+			el.src = URL.createObjectURL(file);
+		});
+	}
+
+	async function uploadMedia(reportId: string, file: File) {
+		mediaUploading = true;
+		mediaResult = null;
+		try {
+			if (!['image/jpeg', 'image/webp', 'video/mp4'].includes(file.type)) {
+				mediaResult = { ok: false, error: 'Only JPEG/WEBP photos or MP4 video are accepted.' };
+				return;
+			}
+			if (file.size > MAX_FILE_SIZE) {
+				mediaResult = { ok: false, error: 'File is too large (max 80MB).' };
+				return;
+			}
+			let durationSeconds: number | undefined;
+			if (file.type === 'video/mp4') {
+				durationSeconds = await videoDuration(file);
+				if (durationSeconds > MAX_VIDEO_DURATION_S) {
+					mediaResult = {
+						ok: false,
+						error: `Video is ${Math.round(durationSeconds)}s — must be ${MAX_VIDEO_DURATION_S}s or shorter.`,
+					};
+					return;
+				}
+			}
+
+			const res = await fetch(`${PUBLIC_SUPABASE_URL}/functions/v1/media-upload`, {
+				method: 'POST',
+				headers: {
+					'Content-Type': 'application/json',
+					apikey: import.meta.env.PUBLIC_SUPABASE_PUBLISHABLE_KEY,
+				},
+				body: JSON.stringify({
+					report_id: reportId,
+					mime_type: file.type,
+					file_size: file.size,
+					duration_seconds: durationSeconds,
+				}),
+			});
+			const body = await res.json();
+			if (!res.ok) {
+				mediaResult = { ok: false, error: body.error ?? `request failed (${res.status})` };
+				return;
+			}
+
+			const { error: uploadErr } = await supabase.storage
+				.from('media-quarantine')
+				.uploadToSignedUrl(body.storage_path, body.token, file, { contentType: file.type });
+			if (uploadErr) {
+				mediaResult = { ok: false, error: uploadErr.message };
+				return;
+			}
+
+			mediaResult = { ok: true };
+		} catch (err) {
+			mediaResult = { ok: false, error: (err as Error).message };
+		} finally {
+			mediaUploading = false;
+		}
+	}
 
 	const OSM_STYLE: StyleSpecification = {
 		version: 8,
@@ -157,6 +242,8 @@
 					reportId: body.report_id,
 					status: body.status,
 					claimToken: body.claim_token,
+					campaignProgress: body.campaign_progress,
+					wonImmediately: body.won_immediately,
 				};
 			}
 		} catch (err) {
@@ -255,13 +342,60 @@
 					(this category is reviewed by a moderator before it appears publicly)
 				{/if}
 			</p>
+			{#if result.campaignProgress && !result.claimToken}
+				{@const p = result.campaignProgress}
+				<div style="border: 1px solid; padding: 1rem; margin-top: 1rem;">
+					<p style="margin: 0 0 0.5rem;">
+						{p.submission_count} of {p.min_submissions} submissions toward this campaign's reward.
+					</p>
+					<div style="height: 6px; background: rgba(128,128,128,0.25); border-radius: 3px; overflow: hidden;">
+						<div style="height: 100%; width: {Math.min(100, (p.submission_count / p.min_submissions) * 100)}%; background: currentColor;"></div>
+					</div>
+					<p style="margin: 0.5rem 0 0;"><small>
+						{p.min_submissions - p.submission_count} more report{p.min_submissions - p.submission_count === 1 ? '' : 's'} under this campaign to qualify.
+					</small></p>
+				</div>
+			{/if}
+
 			{#if result.claimToken}
 				<div role="alert" style="border: 2px solid; padding: 1rem; margin-top: 1rem;">
-					<p><strong>Save this code — it's the only way to claim a reward if you win.</strong></p>
+					{#if result.wonImmediately}
+						<p><strong>You've qualified and a reward slot is confirmed.</strong></p>
+						<p>Save this code, then visit <a href="/claim">/claim</a> to redeem it.</p>
+					{:else}
+						<p><strong>You're entered — save this code.</strong></p>
+						<p>Winners are drawn at random once the campaign closes. Check back at <a href="/claim">/claim</a> with this code.</p>
+					{/if}
 					<p>We don't keep any way to link it back to you or this device, so we can't recover it if it's lost.</p>
 					<code style="font-size: 1.1rem; user-select: all;">{result.claimToken}</code>
 				</div>
 			{/if}
+
+			{@const reportId = result.reportId}
+			<div style="margin-top: 1rem;">
+				<label>
+					Add a photo or short video (optional, up to {MAX_VIDEO_DURATION_S}s / 80MB)
+					<input
+						bind:this={mediaInput}
+						type="file"
+						accept="image/jpeg,image/webp,video/mp4"
+						disabled={mediaUploading}
+						onchange={(e) => {
+							const file = (e.currentTarget as HTMLInputElement).files?.[0];
+							if (file) uploadMedia(reportId, file);
+						}}
+					/>
+				</label>
+				{#if mediaUploading}
+					<p>Uploading…</p>
+				{:else if mediaResult}
+					{#if mediaResult.ok}
+						<p role="status">Uploaded — it'll appear once it clears review.</p>
+					{:else}
+						<p role="alert">{mediaResult.error}</p>
+					{/if}
+				{/if}
+			</div>
 		{:else}
 			<p role="alert">Error: {result.error}</p>
 		{/if}

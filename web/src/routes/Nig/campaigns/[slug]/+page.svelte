@@ -13,6 +13,8 @@
 		description: string | null;
 		status: string;
 		reward_count: number;
+		min_submissions: number;
+		reward_mode: 'raffle' | 'first_n';
 		ends_at: string | null;
 	}
 	interface Row {
@@ -51,7 +53,9 @@
 	onMount(async () => {
 		const { data: campaignRow, error: campaignErr } = await supabase
 			.from('campaigns')
-			.select('id, name, description, status, reward_count, ends_at, countries!inner(url_slug)')
+			.select(
+				'id, name, description, status, reward_count, min_submissions, reward_mode, ends_at, countries!inner(url_slug)',
+			)
 			.eq('slug', slug)
 			.eq('countries.url_slug', 'Nig')
 			.maybeSingle();
@@ -102,9 +106,17 @@
 	{#if campaign.status === 'active'}
 		<p>
 			<a href="/Nig/report?campaign={slug}">Report for this campaign</a>
-			· {campaign.reward_count} reward{campaign.reward_count === 1 ? '' : 's'} up for random draw
+			· {campaign.reward_count} reward{campaign.reward_count === 1 ? '' : 's'}
+			{#if campaign.reward_mode === 'first_n'}
+				· first {campaign.reward_count} to qualify win, no draw
+			{:else}
+				· winners drawn at random from everyone who qualifies
+			{/if}
 			{#if campaign.ends_at}· closes {new Date(campaign.ends_at).toLocaleDateString()}{/if}
 		</p>
+		{#if campaign.min_submissions > 1}
+			<p><small>Requires {campaign.min_submissions} published reports under this campaign to qualify.</small></p>
+		{/if}
 		<p>Got a claim code from a previous report? <a href="/claim">Check it here</a>.</p>
 	{:else}
 		<p>This campaign is closed. Have a claim code? <a href="/claim">Check it here</a>.</p>
