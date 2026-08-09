@@ -135,11 +135,15 @@ export default {
     // violence/police_issue always need human review (also enforced by a
     // DB trigger as a second line of defense — this isn't the only place
     // that can never publish these directly).
+    //
+    // reporter_x_handle is allowed on these too: the frontend requires an
+    // explicit "I understand the risk" acknowledgment before it'll send
+    // one for a sensitive category, but that's a client-side UX gate, not
+    // something this endpoint can verify — so it isn't re-enforced here.
+    // Whether to self-identify on a sensitive report is the reporter's
+    // informed choice (e.g. a pseudonymous X account carries different
+    // risk than a real-name one), not this system's to override.
     const requiresHumanMod = category === "violence" || category === "police_issue";
-    // Primary defense against self-identifying on a report that exists to
-    // let someone flag police misconduct/insecurity anonymously — the DB
-    // trigger strips it too, but don't rely on that alone.
-    if (requiresHumanMod) xHandle = null;
 
     const { data: inserted, error: insertErr } = await admin
       .from("reports")

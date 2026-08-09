@@ -31,9 +31,10 @@
 	let level1Id = $state('');
 
 	const SENSITIVE_CATEGORIES = new Set(['violence', 'police_issue']);
-	let showXHandle = $derived(!SENSITIVE_CATEGORIES.has(category));
+	let isSensitiveCategory = $derived(SENSITIVE_CATEGORIES.has(category));
+	let riskAcknowledged = $state(false);
 	$effect(() => {
-		if (!showXHandle) xHandle = '';
+		if (!isSensitiveCategory) riskAcknowledged = false;
 	});
 
 	let submitting = $state(false);
@@ -118,6 +119,10 @@
 			result = { ok: false, error: 'Drop a pin on the map first.' };
 			return;
 		}
+		if (isSensitiveCategory && xHandle && !riskAcknowledged) {
+			result = { ok: false, error: 'Check the acknowledgment box below, or clear the X handle field, before submitting.' };
+			return;
+		}
 		submitting = true;
 		result = null;
 		try {
@@ -140,7 +145,7 @@
 					accuracy_m: accuracyM,
 					session_uuid: getSessionUuid(),
 					campaign_slug: campaignSlug || undefined,
-					reporter_x_handle: showXHandle && xHandle ? xHandle : undefined,
+					reporter_x_handle: xHandle || undefined,
 				}),
 			});
 			const body = await res.json();
@@ -211,15 +216,30 @@
 			<textarea bind:value={description} maxlength="2000" rows="3"></textarea>
 		</label>
 
-		{#if showXHandle}
-			<label>
-				Your X handle (optional)
-				<input type="text" bind:value={xHandle} maxlength="16" placeholder="e.g. yourhandle" />
-			</label>
-			<p><small>
-				If this report gets shared on Citizn's X account, we'll tag you so your network can see and
-				repost it. Leave blank to stay anonymous — this is never required.
-			</small></p>
+		<label>
+			Your X handle (optional)
+			<input type="text" bind:value={xHandle} maxlength="16" placeholder="e.g. yourhandle" />
+		</label>
+		<p><small>
+			If this report gets shared on Citizn's X account, we'll tag you so your network can see and
+			repost it. Leave blank to stay anonymous — this is never required.
+		</small></p>
+
+		{#if isSensitiveCategory && xHandle}
+			<div role="alert" style="border: 2px solid; padding: 1rem;">
+				<p>
+					<strong>This is a {category === 'police_issue' ? 'police/security-service' : 'violence/insecurity'} report.</strong>
+					Tagging your X handle here will publicly link that account to this specific report and
+					its location once it's posted. If your X account is tied to your real identity, this
+					could expose you to retaliation. If it's a pseudonymous/anonymous account, that risk is
+					lower — but the report content and location will still be publicly attached to whatever
+					that account is or becomes linked to later.
+				</p>
+				<label>
+					<input type="checkbox" bind:checked={riskAcknowledged} />
+					I understand this and want to tag my X handle anyway
+				</label>
+			</div>
 		{/if}
 
 		<button type="submit" disabled={submitting}>
