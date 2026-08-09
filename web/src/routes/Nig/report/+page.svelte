@@ -44,6 +44,7 @@
 	let accuracyM: number | null = $state(null);
 	let locating = $state(true);
 	let locationError = $state('');
+	let locationPermissionDenied = $state(false);
 	let pinLat: number | null = $state(null);
 	let pinLng: number | null = $state(null);
 
@@ -76,23 +77,36 @@
 			if (levels.length > 0) level1Id = levels[0].id;
 		});
 
-	navigator.geolocation?.getCurrentPosition(
-		(pos) => {
-			deviceLat = pos.coords.latitude;
-			deviceLng = pos.coords.longitude;
-			accuracyM = pos.coords.accuracy;
-			pinLat = deviceLat;
-			pinLng = deviceLng;
-			locating = false;
-		},
-		(err) => {
-			locationError = err.message;
-			locating = false;
-			pinLat = 6.5244;
-			pinLng = 3.3792;
-		},
-		{ enableHighAccuracy: true, timeout: 10000 },
-	);
+	function requestLocation() {
+		locating = true;
+		locationError = '';
+		locationPermissionDenied = false;
+		navigator.geolocation?.getCurrentPosition(
+			(pos) => {
+				deviceLat = pos.coords.latitude;
+				deviceLng = pos.coords.longitude;
+				accuracyM = pos.coords.accuracy;
+				pinLat = deviceLat;
+				pinLng = deviceLng;
+				locating = false;
+			},
+			(err) => {
+				locationError = err.message;
+				locationPermissionDenied = err.code === err.PERMISSION_DENIED;
+				locating = false;
+				// A dropped pin still needs somewhere to start — this is
+				// only ever a map center, never used as the device fix
+				// (deviceLat/deviceLng stay null), so it can't bypass the
+				// geofence check in submit().
+				if (pinLat === null) {
+					pinLat = 6.5244;
+					pinLng = 3.3792;
+				}
+			},
+			{ enableHighAccuracy: true, timeout: 10000 },
+		);
+	}
+	requestLocation();
 
 	const OSM_STYLE: StyleSpecification = {
 		version: 8,
@@ -395,8 +409,29 @@
 				<div class="p-4">
 					<h2 class="text-2xl font-semibold mb-1 font-display">Where is this?</h2>
 					<p class="text-sm text-muted-foreground mb-4">
-						{#if locating}Getting your location…{:else if locationError}Couldn't get precise location ({locationError}) — drag the pin.{:else}Drag the pin to the exact spot. Accuracy: {Math.round(accuracyM ?? 0)}m{/if}
+						{#if locating}
+							Getting your location…
+						{:else if deviceLat !== null}
+							Drag the pin to the exact spot. Accuracy: {Math.round(accuracyM ?? 0)}m
+						{/if}
 					</p>
+
+					{#if !locating && deviceLat === null}
+						<div class="rounded-xl bg-amber-50 border border-amber-200 p-3.5 mb-4">
+							<p class="text-xs text-amber-700 mb-2">
+								{#if locationPermissionDenied}
+									Location access is blocked for this site. On iPhone: tap the <strong>"aA"</strong> icon in the address
+									bar → <strong>Website Settings</strong> → <strong>Location</strong> → Allow, or check
+									<strong>Settings → Safari → Location</strong>. On Android: check your browser's site permissions.
+									Then try again.
+								{:else}
+									Couldn't get your location ({locationError}). A live location fix is required to submit — it's
+									what proves you're actually at the spot you're reporting.
+								{/if}
+							</p>
+							<button onclick={requestLocation} class="text-xs font-semibold text-amber-800 underline">Try again</button>
+						</div>
+					{/if}
 
 					<label class="block text-sm font-medium text-foreground mb-2">
 						State
@@ -413,7 +448,7 @@
 
 					<button
 						onclick={() => (step = 3)}
-						disabled={locating}
+						disabled={locating || deviceLat === null}
 						class="w-full bg-primary text-primary-foreground py-4 rounded-2xl font-semibold text-sm flex items-center justify-center gap-2 disabled:opacity-50"
 					>
 						Confirm location <ArrowRight size={16} />
@@ -538,12 +573,15 @@
 					</div>
 
 					{#if result && !result.ok}
-						<p class="text-sm text-destructive mb-3">{result.error}</p>
+						<p class="text-sm text-destructive mb-1">{result.error}</p>
+						{#if deviceLat === null}
+							<button onclick={requestLocation} class="text-sm font-semibold text-primary underline mb-3">Try getting location again</button>
+						{/if}
 					{/if}
 
 					<button
 						onclick={submit}
-						disabled={submitting}
+						disabled={submitting || deviceLat === null}
 						class="w-full bg-primary text-primary-foreground py-4 rounded-2xl font-bold text-sm flex items-center justify-center gap-2 disabled:opacity-60"
 					>
 						{submitting ? 'Submitting…' : 'Submit report'}
