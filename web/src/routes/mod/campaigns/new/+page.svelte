@@ -2,8 +2,10 @@
 	import { onMount } from 'svelte';
 	import { goto } from '$app/navigation';
 	import { supabase } from '$lib/supabase';
+	import { COUNTRIES } from '$lib/countries';
 	import { PUBLIC_SUPABASE_URL } from '$env/static/public';
 
+	let country = $state('Nig');
 	let slug = $state('');
 	let name = $state('');
 	let description = $state('');
@@ -36,7 +38,7 @@
 				method: 'POST',
 				headers: { 'Content-Type': 'application/json', apikey: import.meta.env.PUBLIC_SUPABASE_PUBLISHABLE_KEY, Authorization: `Bearer ${token}` },
 				body: JSON.stringify({
-					country_slug: 'Nig',
+					country_slug: country,
 					slug,
 					name,
 					description: description || undefined,
@@ -65,6 +67,15 @@
 <h1 class="text-2xl font-semibold font-display mt-3 mb-5">Create a campaign</h1>
 
 <form onsubmit={submit} class="space-y-4 max-w-md">
+	<label class="block">
+		<span class="block text-sm font-medium text-foreground mb-1.5">Country</span>
+		<select bind:value={country} class="w-full bg-input-background border border-border rounded-xl px-4 py-2.5 text-sm">
+			{#each COUNTRIES as c (c.slug)}
+				<option value={c.slug}>{c.name}</option>
+			{/each}
+		</select>
+	</label>
+
 	<label class="block">
 		<span class="block text-sm font-medium text-foreground mb-1.5">Slug</span>
 		<input
@@ -127,7 +138,7 @@
 {#if result}
 	{#if result.ok}
 		<p class="text-sm text-emerald-700 mt-3">
-			Created — <a href="/Nig/campaigns/{result.slug}" class="underline">view it</a>
+			Created — <a href="/{country}/campaigns/{result.slug}" class="underline">view it</a>
 		</p>
 	{:else}
 		<p class="text-sm text-destructive mt-3">{result.error}</p>

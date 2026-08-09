@@ -20,6 +20,7 @@
 	import CheckCircle2 from 'lucide-svelte/icons/check-circle-2';
 	import Share2 from 'lucide-svelte/icons/share-2';
 
+	const country = page.params.country!;
 	const campaignSlug = page.url.searchParams.get('campaign');
 	const STEP_COUNT = 5;
 	const MAX_VIDEO_DURATION_S = 140;
@@ -75,7 +76,7 @@
 	supabase
 		.from('admin_level1')
 		.select('id, name, countries!inner(url_slug)')
-		.eq('countries.url_slug', 'Nig')
+		.eq('countries.url_slug', country)
 		.order('name')
 		.then(({ data }) => {
 			levels = (data ?? []).map((r: any) => ({ id: r.id, name: r.name }));
@@ -151,7 +152,7 @@
 			// everyone regardless of where they actually were, which is
 			// just wrong, not a style choice.
 			supabase
-				.rpc('nearest_admin_level1', { p_country_slug: 'Nig', p_lat: deviceLat, p_lng: deviceLng })
+				.rpc('nearest_admin_level1', { p_country_slug: country, p_lat: deviceLat, p_lng: deviceLng })
 				.then(({ data }) => {
 					const match = data?.[0];
 					if (match) level1Id = match.id;
@@ -271,7 +272,7 @@
 				method: 'POST',
 				headers: { 'Content-Type': 'application/json', apikey: import.meta.env.PUBLIC_SUPABASE_PUBLISHABLE_KEY },
 				body: JSON.stringify({
-					country_slug: 'Nig',
+					country_slug: country,
 					category,
 					severity,
 					description: description || undefined,
@@ -383,7 +384,7 @@
 			<button class="flex-1 py-3.5 rounded-2xl border border-border text-sm font-medium flex items-center justify-center gap-2">
 				<Share2 size={15} /> Share
 			</button>
-			<a href="/Nig" class="flex-1 py-3.5 rounded-2xl bg-primary text-primary-foreground text-sm font-semibold flex items-center justify-center">
+			<a href="/{country}" class="flex-1 py-3.5 rounded-2xl bg-primary text-primary-foreground text-sm font-semibold flex items-center justify-center">
 				Back to feed
 			</a>
 		</div>

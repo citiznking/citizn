@@ -9,6 +9,7 @@
 	import ChevronLeft from 'lucide-svelte/icons/chevron-left';
 
 	const id = page.params.id;
+	const country = page.params.country;
 
 	interface Report {
 		id: string;
@@ -88,7 +89,7 @@
 </script>
 
 <div class="px-4 pt-3 pb-2 flex items-center gap-2 border-b border-border">
-	<a href="/Nig" class="p-1.5 -ml-1.5 rounded-xl text-foreground/60 active:bg-muted transition-colors" aria-label="All reports">
+	<a href="/{country}" class="p-1.5 -ml-1.5 rounded-xl text-foreground/60 active:bg-muted transition-colors" aria-label="All reports">
 		<ChevronLeft size={20} />
 	</a>
 	<span class="text-sm font-medium">All reports</span>

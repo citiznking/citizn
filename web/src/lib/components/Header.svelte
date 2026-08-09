@@ -1,13 +1,15 @@
 <script lang="ts">
+	import { page } from '$app/state';
 	import Sun from 'lucide-svelte/icons/sun';
 	import Moon from 'lucide-svelte/icons/moon';
 	import CitiznMark from './CitiznMark.svelte';
 
 	let { dark, onToggleDark }: { dark: boolean; onToggleDark: () => void } = $props();
+	let country = $derived(page.params.country ?? 'Nig');
 </script>
 
 <header class="flex items-center justify-between px-4 py-3 border-b border-border bg-background shrink-0">
-	<a href="/Nig" class="flex items-center gap-2 text-primary">
+	<a href="/{country}" class="flex items-center gap-2 text-primary">
 		<CitiznMark size={22} />
 		<span class="text-[20px] leading-none font-wordmark text-foreground">citizn</span>
 	</a>

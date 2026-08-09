@@ -8,6 +8,7 @@
 
 	let {
 		id,
+		country,
 		category,
 		severity,
 		status,
@@ -19,6 +20,7 @@
 		compact = false,
 	}: {
 		id: string;
+		country: string;
 		category: string;
 		severity: string;
 		status: string;
@@ -36,7 +38,7 @@
 </script>
 
 <a
-	href="/Nig/reports/{id}"
+	href="/{country}/reports/{id}"
 	class="block bg-card rounded-2xl overflow-hidden border border-border shadow-sm active:scale-[0.99] transition-transform"
 	style="border-left-width: 3px; border-left-color: {cat.color};"
 >

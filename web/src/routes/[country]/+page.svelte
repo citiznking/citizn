@@ -1,10 +1,13 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
+	import { page } from '$app/state';
 	import { supabase } from '$lib/supabase';
 	import { CATEGORIES } from '$lib/design/categories';
 	import ReportCard from '$lib/components/ReportCard.svelte';
 	import SlidersHorizontal from 'lucide-svelte/icons/sliders-horizontal';
 	import Vote from 'lucide-svelte/icons/vote';
+
+	const country = page.params.country!;
 
 	interface Row {
 		id: string;
@@ -27,8 +30,8 @@
 
 	onMount(async () => {
 		const [{ data, error }, { data: levels }] = await Promise.all([
-			supabase.rpc('published_reports', { p_country_slug: 'Nig' }),
-			supabase.from('admin_level1').select('id, name, countries!inner(url_slug)').eq('countries.url_slug', 'Nig'),
+			supabase.rpc('published_reports', { p_country_slug: country }),
+			supabase.from('admin_level1').select('id, name, countries!inner(url_slug)').eq('countries.url_slug', country),
 		]);
 		if (error) {
 			loadError = error.message;
@@ -43,14 +46,16 @@
 </script>
 
 <div class="flex flex-col h-full">
-	<a
-		href="/Nig/2027election"
-		class="flex items-center gap-2 px-4 py-2.5 text-xs font-medium text-white shrink-0"
-		style="background: linear-gradient(135deg, #0F2151 0%, #1B3C8A 100%);"
-	>
-		<Vote size={13} />
-		2027 General Election — report what you see at your polling unit
-	</a>
+	{#if country === 'Nig'}
+		<a
+			href="/Nig/2027election"
+			class="flex items-center gap-2 px-4 py-2.5 text-xs font-medium text-white shrink-0"
+			style="background: linear-gradient(135deg, #0F2151 0%, #1B3C8A 100%);"
+		>
+			<Vote size={13} />
+			2027 General Election — report what you see at your polling unit
+		</a>
+	{/if}
 	<div class="flex gap-2 px-4 py-3 overflow-x-auto scrollbar-none shrink-0 border-b border-border">
 		<button
 			onclick={() => (filter = 'all')}
@@ -90,12 +95,13 @@
 		{:else if visible.length === 0}
 			<div class="text-center py-12">
 				<p class="text-sm text-muted-foreground">No reports in this category yet.</p>
-				<a href="/Nig/report" class="mt-3 text-sm text-primary font-medium inline-block">Be the first to report</a>
+				<a href="/{country}/report" class="mt-3 text-sm text-primary font-medium inline-block">Be the first to report</a>
 			</div>
 		{:else}
 			{#each visible as r (r.id)}
 				<ReportCard
 					id={r.id}
+					{country}
 					category={r.category}
 					severity={r.severity}
 					status={r.status}

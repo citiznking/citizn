@@ -1,7 +1,10 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
+	import { page } from '$app/state';
 	import { supabase } from '$lib/supabase';
 	import { CATEGORIES } from '$lib/design/categories';
+
+	const country = page.params.country;
 
 	interface Line {
 		id: string;
@@ -14,6 +17,7 @@
 
 	let levels: { id: string; name: string }[] = $state([]);
 	let level1Id = $state('');
+	let level1Label = $state('State');
 	let lines: Line[] = $state([]);
 	let loading = $state(true);
 
@@ -36,10 +40,11 @@
 	onMount(async () => {
 		const { data } = await supabase
 			.from('admin_level1')
-			.select('id, name, countries!inner(url_slug)')
-			.eq('countries.url_slug', 'Nig')
+			.select('id, name, label, countries!inner(url_slug)')
+			.eq('countries.url_slug', country)
 			.order('name');
 		levels = (data ?? []).map((r: any) => ({ id: r.id, name: r.name }));
+		level1Label = (data?.[0] as any)?.label ?? 'State';
 		if (levels.length > 0) {
 			level1Id = levels[0].id;
 			await loadLines();
@@ -49,19 +54,19 @@
 	});
 </script>
 
-<a href="/Nig" class="text-sm text-primary font-medium">&larr; Back to Citizn</a>
+<a href="/{country}" class="text-sm text-primary font-medium">&larr; Back to Citizn</a>
 
-<h1 class="text-2xl font-semibold font-display mt-3 mb-1">State budgets</h1>
+<h1 class="text-2xl font-semibold font-display mt-3 mb-1">{level1Label} budgets</h1>
 <p class="text-sm text-muted-foreground mb-1 leading-relaxed">
-	Approved state budget line items by sector, as published by each state — compare against what's
+	Approved {level1Label.toLowerCase()} budget line items by sector, as published — compare against what's
 	actually reported broken on the ground.
 </p>
 <p class="text-xs text-muted-foreground mb-5">
-	LGA-level federal allocation figures aren't available yet — that needs LGA reference data this build doesn't have seeded.
+	Local-level federal allocation figures aren't available yet — that needs finer-grained reference data this build doesn't have seeded.
 </p>
 
 <label class="block mb-5 max-w-xs">
-	<span class="block text-sm font-medium text-foreground mb-1.5">State</span>
+	<span class="block text-sm font-medium text-foreground mb-1.5">{level1Label}</span>
 	<select bind:value={level1Id} onchange={loadLines} class="w-full bg-input-background border border-border rounded-xl px-4 py-2.5 text-sm">
 		{#each levels as l (l.id)}
 			<option value={l.id}>{l.name}</option>

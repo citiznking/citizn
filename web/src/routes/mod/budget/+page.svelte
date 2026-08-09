@@ -3,10 +3,22 @@
 	import { goto } from '$app/navigation';
 	import { supabase } from '$lib/supabase';
 	import { CATEGORIES } from '$lib/design/categories';
+	import { COUNTRIES } from '$lib/countries';
 	import { PUBLIC_SUPABASE_URL } from '$env/static/public';
 
-	let levels: { id: string; name: string }[] = $state([]);
+	let country = $state('Nig');
+	let levels: { id: string; name: string; label: string }[] = $state([]);
 	let level1Id = $state('');
+
+	async function loadLevels() {
+		const { data } = await supabase
+			.from('admin_level1')
+			.select('id, name, label, countries!inner(url_slug)')
+			.eq('countries.url_slug', country)
+			.order('name');
+		levels = (data ?? []).map((r: any) => ({ id: r.id, name: r.name, label: r.label }));
+		level1Id = levels.length > 0 ? levels[0].id : '';
+	}
 	let fiscalYear = $state(new Date().getFullYear());
 	let sector = $state('road');
 	let lineItem = $state('');
@@ -24,13 +36,7 @@
 			await goto('/mod/login');
 			return;
 		}
-		const { data } = await supabase
-			.from('admin_level1')
-			.select('id, name, countries!inner(url_slug)')
-			.eq('countries.url_slug', 'Nig')
-			.order('name');
-		levels = (data ?? []).map((r: any) => ({ id: r.id, name: r.name }));
-		if (levels.length > 0) level1Id = levels[0].id;
+		await loadLevels();
 	});
 
 	async function submit(e: SubmitEvent) {
@@ -80,7 +86,16 @@
 
 <form onsubmit={submit} class="space-y-4 max-w-md">
 	<label class="block">
-		<span class="block text-sm font-medium text-foreground mb-1.5">State</span>
+		<span class="block text-sm font-medium text-foreground mb-1.5">Country</span>
+		<select bind:value={country} onchange={loadLevels} class="w-full bg-input-background border border-border rounded-xl px-4 py-2.5 text-sm">
+			{#each COUNTRIES as c (c.slug)}
+				<option value={c.slug}>{c.name}</option>
+			{/each}
+		</select>
+	</label>
+
+	<label class="block">
+		<span class="block text-sm font-medium text-foreground mb-1.5">{levels[0]?.label ?? 'State'}</span>
 		<select bind:value={level1Id} required class="w-full bg-input-background border border-border rounded-xl px-4 py-2.5 text-sm">
 			{#each levels as l (l.id)}
 				<option value={l.id}>{l.name}</option>

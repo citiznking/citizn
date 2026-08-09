@@ -1,8 +1,11 @@
 <script lang="ts">
+	import { page } from '$app/state';
 	import { supabase } from '$lib/supabase';
 	import Trophy from 'lucide-svelte/icons/trophy';
 	import ArrowRight from 'lucide-svelte/icons/arrow-right';
 	import Hash from 'lucide-svelte/icons/hash';
+
+	const country = page.params.country;
 
 	interface Campaign {
 		id: string;
@@ -21,7 +24,7 @@
 	supabase
 		.from('campaigns')
 		.select('id, slug, name, description, status, reward_count, reward_mode, ends_at, countries!inner(url_slug)')
-		.eq('countries.url_slug', 'Nig')
+		.eq('countries.url_slug', country)
 		.order('status')
 		.then(({ data }) => {
 			campaigns = (data ?? []) as unknown as Campaign[];
@@ -43,7 +46,7 @@
 		<div class="px-4 space-y-3 mt-2">
 			{#each campaigns as c (c.id)}
 				<a
-					href="/Nig/campaigns/{c.slug}"
+					href="/{country}/campaigns/{c.slug}"
 					class="block rounded-2xl overflow-hidden border border-border bg-card shadow-sm active:scale-[0.99] transition-transform"
 				>
 					<div class="px-5 pt-4 pb-3" style="background: linear-gradient(135deg, #0F2151 0%, #1B3C8A 60%, #173E8C 100%);">

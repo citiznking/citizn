@@ -6,6 +6,7 @@
 	import Trophy from 'lucide-svelte/icons/trophy';
 
 	let path = $derived(page.url.pathname);
+	let country = $derived(page.params.country ?? 'Nig');
 	function active(prefix: string, exact = false) {
 		return exact ? path === prefix : path === prefix || path.startsWith(`${prefix}/`);
 	}
@@ -13,8 +14,8 @@
 
 <nav class="flex items-center border-t border-border bg-background shrink-0 px-2">
 	<a
-		href="/Nig"
-		class="flex-1 flex flex-col items-center gap-1 py-3 rounded-xl transition-colors {active('/Nig', true)
+		href="/{country}"
+		class="flex-1 flex flex-col items-center gap-1 py-3 rounded-xl transition-colors {active(`/${country}`, true)
 			? 'text-primary'
 			: 'text-muted-foreground'}"
 	>
@@ -23,8 +24,8 @@
 	</a>
 
 	<a
-		href="/Nig/map"
-		class="flex-1 flex flex-col items-center gap-1 py-3 rounded-xl transition-colors {active('/Nig/map')
+		href="/{country}/map"
+		class="flex-1 flex flex-col items-center gap-1 py-3 rounded-xl transition-colors {active(`/${country}/map`)
 			? 'text-primary'
 			: 'text-muted-foreground'}"
 	>
@@ -32,7 +33,7 @@
 		<span class="text-[10px] font-medium">Map</span>
 	</a>
 
-	<a href="/Nig/report" class="flex flex-col items-center gap-1 py-2 px-4">
+	<a href="/{country}/report" class="flex flex-col items-center gap-1 py-2 px-4">
 		<div class="w-12 h-12 rounded-2xl bg-primary flex items-center justify-center shadow-lg active:scale-95 transition-transform">
 			<Plus size={22} class="text-primary-foreground" />
 		</div>
@@ -40,8 +41,8 @@
 	</a>
 
 	<a
-		href="/Nig/campaigns"
-		class="flex-1 flex flex-col items-center gap-1 py-3 rounded-xl transition-colors {active('/Nig/campaigns')
+		href="/{country}/campaigns"
+		class="flex-1 flex flex-col items-center gap-1 py-3 rounded-xl transition-colors {active(`/${country}/campaigns`)
 			? 'text-primary'
 			: 'text-muted-foreground'}"
 	>

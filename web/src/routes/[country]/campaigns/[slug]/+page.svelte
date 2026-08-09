@@ -14,8 +14,10 @@
 	import ArrowRight from 'lucide-svelte/icons/arrow-right';
 	import { getCategory } from '$lib/design/categories';
 	import { SEVERITY_RADIUS } from '$lib/design/severity';
+	import { mapDefaultsFor } from '$lib/countryMapDefaults';
 
 	const slug = page.params.slug;
+	const country = page.params.country!;
 
 	interface Campaign {
 		id: string;
@@ -57,7 +59,7 @@
 			.from('campaigns')
 			.select('id, name, description, status, reward_count, min_submissions, reward_mode, ends_at, countries!inner(url_slug)')
 			.eq('slug', slug)
-			.eq('countries.url_slug', 'Nig')
+			.eq('countries.url_slug', country)
 			.maybeSingle();
 
 		if (campaignErr || !campaignRow) {
@@ -68,8 +70,8 @@
 		campaign = campaignRow as unknown as Campaign;
 
 		const [{ data, error }, { data: levels }] = await Promise.all([
-			supabase.rpc('published_reports', { p_country_slug: 'Nig' }),
-			supabase.from('admin_level1').select('id, name, countries!inner(url_slug)').eq('countries.url_slug', 'Nig'),
+			supabase.rpc('published_reports', { p_country_slug: country }),
+			supabase.from('admin_level1').select('id, name, countries!inner(url_slug)').eq('countries.url_slug', country),
 		]);
 		if (error) {
 			loadError = error.message;
@@ -79,7 +81,8 @@
 		levelNames = Object.fromEntries((levels ?? []).map((l: any) => [l.id, l.name]));
 		loading = false;
 
-		map = new MlMap({ container: mapContainer, style: MAP_STYLE, center: [8.6753, 9.082], zoom: 5.5 });
+		const defaults = mapDefaultsFor(country);
+		map = new MlMap({ container: mapContainer, style: MAP_STYLE, center: defaults.center, zoom: defaults.zoom });
 		for (const r of reports) {
 			const cat = getCategory(r.category);
 			const radius = SEVERITY_RADIUS[r.severity] ?? 8;
@@ -169,7 +172,7 @@
 			<div class="px-5 py-4">
 				{#if campaign.status === 'active'}
 					<a
-						href="/Nig/report?campaign={slug}"
+						href="/{country}/report?campaign={slug}"
 						class="w-full bg-primary text-primary-foreground py-4 rounded-2xl font-semibold text-sm flex items-center justify-center gap-2"
 					>
 						Report for this campaign <ArrowRight size={16} />
@@ -197,6 +200,7 @@
 					{#each reports as r (r.id)}
 						<ReportCard
 							id={r.id}
+							{country}
 							category={r.category}
 							severity={r.severity}
 							status={r.status}

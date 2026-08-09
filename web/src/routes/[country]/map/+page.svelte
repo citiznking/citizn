@@ -1,12 +1,16 @@
 <script lang="ts">
 	import { onMount, onDestroy } from 'svelte';
+	import { page } from '$app/state';
 	import { Map as MlMap, Marker } from 'maplibre-gl';
 	import 'maplibre-gl/dist/maplibre-gl.css';
 	import { supabase } from '$lib/supabase';
 	import { getCategory, CATEGORIES } from '$lib/design/categories';
 	import { SEVERITY, SEVERITY_RADIUS } from '$lib/design/severity';
 	import { MAP_STYLE } from '$lib/mapStyle';
+	import { mapDefaultsFor } from '$lib/countryMapDefaults';
 	import ReportCard from '$lib/components/ReportCard.svelte';
+
+	const country = page.params.country!;
 
 	interface Row {
 		id: string;
@@ -31,13 +35,14 @@
 
 	onMount(async () => {
 		const [{ data }, { data: levels }] = await Promise.all([
-			supabase.rpc('published_reports', { p_country_slug: 'Nig' }),
-			supabase.from('admin_level1').select('id, name, countries!inner(url_slug)').eq('countries.url_slug', 'Nig'),
+			supabase.rpc('published_reports', { p_country_slug: country }),
+			supabase.from('admin_level1').select('id, name, countries!inner(url_slug)').eq('countries.url_slug', country),
 		]);
 		reports = (data ?? []) as Row[];
 		levelNames = Object.fromEntries((levels ?? []).map((l: any) => [l.id, l.name]));
 
-		map = new MlMap({ container: mapContainer, style: MAP_STYLE, center: [8.6753, 9.082], zoom: 5.5 });
+		const defaults = mapDefaultsFor(country);
+		map = new MlMap({ container: mapContainer, style: MAP_STYLE, center: defaults.center, zoom: defaults.zoom });
 
 		for (const r of reports) {
 			const cat = getCategory(r.category);
@@ -92,6 +97,7 @@
 		<div class="absolute bottom-4 left-4 right-4 z-10">
 			<ReportCard
 				id={selected.id}
+				{country}
 				category={selected.category}
 				severity={selected.severity}
 				status={selected.status}

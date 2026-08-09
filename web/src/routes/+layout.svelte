@@ -23,7 +23,7 @@
 	let isChromeless = $derived(
 		page.url.pathname.startsWith('/mod') ||
 			page.url.pathname === '/claim' ||
-			page.url.pathname === '/Nig/budget' ||
+			/^\/[^/]+\/budget$/.test(page.url.pathname) ||
 			page.url.pathname.startsWith('/Nig/2027election'),
 	);
 </script>
