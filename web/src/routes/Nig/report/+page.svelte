@@ -84,41 +84,64 @@
 			if (levels.length > 0 && !level1Id) level1Id = levels[0].id;
 		});
 
+	let retryCount = $state(0);
+
 	function requestLocation() {
 		locating = true;
 		locationError = '';
 		locationPermissionDenied = false;
+		// Once permission is explicitly denied, browsers refuse to
+		// re-prompt — getCurrentPosition() fails instantly and identically
+		// on every retry. Without a floor here, that reads as "the button
+		// does nothing" (no spinner, no change) rather than "still
+		// blocked" — enforce a minimum visible delay so every click
+		// clearly does *something*, pass or fail.
+		const startedAt = Date.now();
+		function finish(apply: () => void) {
+			const waitMs = Math.max(0, 500 - (Date.now() - startedAt));
+			setTimeout(apply, waitMs);
+		}
+
 		navigator.geolocation?.getCurrentPosition(
 			(pos) => {
-				deviceLat = pos.coords.latitude;
-				deviceLng = pos.coords.longitude;
-				accuracyM = pos.coords.accuracy;
-				pinLat = deviceLat;
-				pinLng = deviceLng;
-				locating = false;
-				// Auto-pick the reporter's actual state instead of leaving
-				// the alphabetically-first one selected — was showing
-				// "Abia" for everyone regardless of where they actually
-				// were, which is just wrong, not a style choice.
-				supabase
-					.rpc('nearest_admin_level1', { p_country_slug: 'Nig', p_lat: deviceLat, p_lng: deviceLng })
-					.then(({ data }) => {
-						const match = data?.[0];
-						if (match) level1Id = match.id;
-					});
+				finish(() => {
+					deviceLat = pos.coords.latitude;
+					deviceLng = pos.coords.longitude;
+					accuracyM = pos.coords.accuracy;
+					pinLat = deviceLat;
+					pinLng = deviceLng;
+					locating = false;
+					// A prior failed submit attempt can leave a stale
+					// "Location not available" banner up — clear it now
+					// that we actually have a fix, don't leave it stuck.
+					if (result && !result.ok) result = null;
+					// Auto-pick the reporter's actual state instead of
+					// leaving the alphabetically-first one selected — was
+					// showing "Abia" for everyone regardless of where they
+					// actually were, which is just wrong, not a style choice.
+					supabase
+						.rpc('nearest_admin_level1', { p_country_slug: 'Nig', p_lat: deviceLat, p_lng: deviceLng })
+						.then(({ data }) => {
+							const match = data?.[0];
+							if (match) level1Id = match.id;
+						});
+				});
 			},
 			(err) => {
-				locationError = err.message;
-				locationPermissionDenied = err.code === err.PERMISSION_DENIED;
-				locating = false;
-				// A dropped pin still needs somewhere to start — this is
-				// only ever a map center, never used as the device fix
-				// (deviceLat/deviceLng stay null), so it can't bypass the
-				// geofence check in submit().
-				if (pinLat === null) {
-					pinLat = 6.5244;
-					pinLng = 3.3792;
-				}
+				finish(() => {
+					locationError = err.message;
+					locationPermissionDenied = err.code === err.PERMISSION_DENIED;
+					locating = false;
+					retryCount += 1;
+					// A dropped pin still needs somewhere to start — this is
+					// only ever a map center, never used as the device fix
+					// (deviceLat/deviceLng stay null), so it can't bypass the
+					// geofence check in submit().
+					if (pinLat === null) {
+						pinLat = 6.5244;
+						pinLng = 3.3792;
+					}
+				});
 			},
 			{ enableHighAccuracy: true, timeout: 10000 },
 		);
@@ -427,7 +450,7 @@
 					<h2 class="text-2xl font-semibold mb-1 font-display">Where is this?</h2>
 					<p class="text-sm text-muted-foreground mb-4">
 						{#if locating}
-							Getting your location…
+							{retryCount > 0 ? 'Checking again…' : 'Getting your location…'}
 						{:else if deviceLat !== null}
 							Drag the pin to the exact spot. Accuracy: {Math.round(accuracyM ?? 0)}m
 						{/if}
@@ -440,13 +463,18 @@
 									Location access is blocked for this site. On iPhone: tap the <strong>"aA"</strong> icon in the address
 									bar → <strong>Website Settings</strong> → <strong>Location</strong> → Allow, or check
 									<strong>Settings → Safari → Location</strong>. On Android: check your browser's site permissions.
-									Then try again.
+									After changing it, tap below — a page reload may be needed for the change to take effect.
 								{:else}
 									Couldn't get your location ({locationError}). A live location fix is required to submit — it's
 									what proves you're actually at the spot you're reporting.
 								{/if}
 							</p>
-							<button onclick={requestLocation} class="text-xs font-semibold text-amber-800 underline">Try again</button>
+							{#if retryCount > 0}
+								<p class="text-xs font-semibold text-amber-800 mb-2">Still blocked (checked {retryCount} time{retryCount === 1 ? '' : 's'}).</p>
+							{/if}
+							<button onclick={requestLocation} class="text-xs font-semibold text-amber-800 underline">
+								{locationPermissionDenied ? "I've changed the setting — check again" : 'Try again'}
+							</button>
 						</div>
 					{/if}
 
