@@ -35,6 +35,10 @@
 
 	let isSensitive = $derived(category ? SENSITIVE_CATEGORIES.has(category) : false);
 	let catData = $derived(category ? getCategory(category) : null);
+	// Required for every category except violence/police_issue — forcing
+	// someone to stop and photograph an in-progress dangerous situation
+	// before they're allowed to report it would itself be a safety risk.
+	let mediaRequired = $derived(!isSensitive);
 
 	let levels: { id: string; name: string }[] = $state([]);
 	let level1Id = $state('');
@@ -457,7 +461,13 @@
 			{:else if step === 3}
 				<div class="p-4">
 					<h2 class="text-2xl font-semibold mb-1 font-display">Add evidence</h2>
-					<p class="text-sm text-muted-foreground mb-5">Photo, description, or both. All optional but helpful.</p>
+					<p class="text-sm text-muted-foreground mb-5">
+						{#if mediaRequired}
+							A photo or video is required for this category. Description is optional but helpful.
+						{:else}
+							Photo, description, or both. All optional — take your safety into account first.
+						{/if}
+					</p>
 
 					<label
 						class="w-full flex items-center gap-3 p-4 rounded-2xl border-2 mb-4 transition-all cursor-pointer {mediaFile
@@ -475,7 +485,7 @@
 								<Camera size={18} class="text-primary" />
 							</div>
 							<div class="text-left">
-								<p class="text-sm font-semibold text-foreground">Take a photo or video</p>
+								<p class="text-sm font-semibold text-foreground">Take a photo or video{mediaRequired ? ' (required)' : ''}</p>
 								<p class="text-xs text-muted-foreground">Strong evidence speeds up response</p>
 							</div>
 						{/if}
@@ -526,9 +536,12 @@
 						<p class="text-xs text-muted-foreground mb-4">Leave blank to stay fully anonymous.</p>
 					{/if}
 
+					{#if mediaRequired && !mediaFile}
+						<p class="text-xs text-amber-700 mb-2">Add a photo or video above to continue.</p>
+					{/if}
 					<button
 						onclick={() => (step = 4)}
-						disabled={isSensitive && !!xHandle && !riskAcknowledged}
+						disabled={(mediaRequired && !mediaFile) || (isSensitive && !!xHandle && !riskAcknowledged)}
 						class="w-full bg-primary text-primary-foreground py-4 rounded-2xl font-semibold text-sm flex items-center justify-center gap-2 mt-2 disabled:opacity-50"
 					>
 						Review report <ArrowRight size={16} />
