@@ -21,7 +21,10 @@
 	// citizen-facing app shell — they get plain full-width layouts instead
 	// of the phone-frame + bottom nav treatment.
 	let isChromeless = $derived(
-		page.url.pathname.startsWith('/mod') || page.url.pathname === '/claim' || page.url.pathname === '/Nig/budget',
+		page.url.pathname.startsWith('/mod') ||
+			page.url.pathname === '/claim' ||
+			page.url.pathname === '/Nig/budget' ||
+			page.url.pathname.startsWith('/Nig/2027election'),
 	);
 </script>
 

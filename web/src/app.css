@@ -1,58 +1,103 @@
-@import url('https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,300;0,9..144,500;0,9..144,600;0,9..144,700;1,9..144,400;1,9..144,600&family=Figtree:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Fraunces:ital,opsz,wght@0,9..144,500;0,9..144,600;1,9..144,600&family=Figtree:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap');
 @import 'tailwindcss';
 
 @custom-variant dark (&:is(.dark *));
 
+/*
+ * Per CITIZN-BRAND-SPEC.md: --citizn-green/#0B7A3B, --citizn-ink/#111111,
+ * --citizn-paper/#FAFAF7, --citizn-amber/#F5A623 (election/alert contexts
+ * only) are the ONLY brand colors — "never more than two colors plus
+ * black and white in any composition". Everything below derives from
+ * those four rather than inventing new hues; secondary/muted/border are
+ * neutral tints of ink or paper, not a separate palette.
+ *
+ * Exception, stated plainly rather than silently applied: severity/status
+ * badges (SevBadge/StatusBadge) keep their existing red/amber/emerald/
+ * violet — those are functional safety signals (critical vs low severity
+ * must stay visually distinct), not brand composition, so the 2-color
+ * rule is treated as applying to brand/marketing surfaces, not
+ * functional UI state color. Those badges also don't yet have dark-mode
+ * variants — a known gap, not fixed here.
+ */
 :root {
 	--font-size: 16px;
-	--background: #EFF4FD;
-	--foreground: #0A1628;
+	--citizn-green: #0B7A3B;
+	--citizn-ink: #111111;
+	--citizn-paper: #FAFAF7;
+	--citizn-amber: #F5A623;
+
+	--background: var(--citizn-paper);
+	--foreground: var(--citizn-ink);
 	--card: #FFFFFF;
-	--card-foreground: #111D35;
+	--card-foreground: var(--citizn-ink);
 	--popover: #FFFFFF;
-	--popover-foreground: #0A1628;
-	--primary: #173E8C;
-	--primary-foreground: #EFF4FD;
-	--secondary: #E0EAF8;
-	--secondary-foreground: #173E8C;
-	--muted: #E5EDF8;
-	--muted-foreground: #5A6E8C;
-	--accent: #1E56D8;
+	--popover-foreground: var(--citizn-ink);
+	--primary: var(--citizn-green);
+	--primary-foreground: #FFFFFF;
+	--secondary: #F0F0EC;
+	--secondary-foreground: var(--citizn-ink);
+	--muted: #F0F0EC;
+	--muted-foreground: #5C5C57;
+	--accent: var(--citizn-green);
 	--accent-foreground: #FFFFFF;
 	--destructive: #C11C3A;
 	--destructive-foreground: #FFFFFF;
-	--border: rgba(23, 62, 140, 0.14);
+	--border: rgba(17, 17, 17, 0.12);
 	--input: transparent;
-	--input-background: #E8F0FC;
-	--switch-background: #B0C4E0;
+	--input-background: #F0F0EC;
+	--switch-background: #D8D8D2;
 	--font-weight-medium: 500;
 	--font-weight-normal: 400;
-	--ring: #1E56D8;
+	--ring: var(--citizn-green);
 	--radius: 0.625rem;
 }
 
+/* Night mode: "green mark on ink, never pure white backgrounds at night" */
 .dark {
-	--background: #080F20;
-	--foreground: #D8E4F5;
-	--card: #0C1A32;
-	--card-foreground: #CCD9F0;
-	--popover: #0C1A32;
-	--popover-foreground: #D8E4F5;
-	--primary: #4A7CEB;
-	--primary-foreground: #080F20;
-	--secondary: #102040;
-	--secondary-foreground: #89B0DC;
-	--muted: #0F1D38;
-	--muted-foreground: #5E7A9C;
-	--accent: #5B8AF5;
-	--accent-foreground: #080F20;
+	--background: var(--citizn-ink);
+	--foreground: var(--citizn-paper);
+	--card: #1A1A1A;
+	--card-foreground: var(--citizn-paper);
+	--popover: #1A1A1A;
+	--popover-foreground: var(--citizn-paper);
+	--primary: var(--citizn-green);
+	--primary-foreground: #FFFFFF;
+	--secondary: #202020;
+	--secondary-foreground: var(--citizn-paper);
+	--muted: #1C1C1C;
+	--muted-foreground: #9A9A94;
+	--accent: var(--citizn-green);
+	--accent-foreground: #FFFFFF;
 	--destructive: #F44C6D;
 	--destructive-foreground: #FFFFFF;
-	--border: rgba(74, 124, 235, 0.18);
-	--input: rgba(74, 124, 235, 0.10);
-	--input-background: #0F1D38;
-	--switch-background: #1E3A64;
-	--ring: #4A7CEB;
+	--border: rgba(250, 250, 247, 0.12);
+	--input: rgba(250, 250, 247, 0.08);
+	--input-background: #1C1C1C;
+	--switch-background: #3A3A3A;
+	--ring: var(--citizn-green);
+}
+
+/* Election mode (seasonal, /Nig/2027election only): ink surface, white
+ * mark, amber signal — the one place amber is allowed. Applied via the
+ * .election class rather than swapping .dark, since it's independent of
+ * the visitor's light/dark preference. */
+.election {
+	--background: var(--citizn-ink);
+	--foreground: #FFFFFF;
+	--card: #1A1A1A;
+	--card-foreground: #FFFFFF;
+	--primary: var(--citizn-amber);
+	--primary-foreground: var(--citizn-ink);
+	--secondary: #202020;
+	--secondary-foreground: #FFFFFF;
+	--muted: #1C1C1C;
+	--muted-foreground: #9A9A94;
+	--accent: var(--citizn-amber);
+	--accent-foreground: var(--citizn-ink);
+	--border: rgba(255, 255, 255, 0.14);
+	--input: rgba(255, 255, 255, 0.08);
+	--input-background: #1C1C1C;
+	--ring: var(--citizn-amber);
 }
 
 @theme inline {
@@ -109,6 +154,11 @@
 	}
 }
 
+/* Wordmark: lowercase always, Inter 600, tight tracking — per brand spec
+ * section 3. Kept distinct from .font-display (Fraunces, used for page
+ * headings elsewhere) since the spec only specifies the logo wordmark's
+ * typeface, not general UI typography. */
+.font-wordmark { font-family: 'Inter', system-ui, sans-serif; font-weight: 600; letter-spacing: -0.03em; }
 .font-display { font-family: 'Fraunces', Georgia, serif; }
 .font-code { font-family: 'JetBrains Mono', 'Courier New', monospace; }
 .scrollbar-none { scrollbar-width: none; }
