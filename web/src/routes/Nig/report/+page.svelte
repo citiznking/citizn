@@ -85,11 +85,22 @@
 		});
 
 	let retryCount = $state(0);
+	// 1=PERMISSION_DENIED, 2=POSITION_UNAVAILABLE, 3=TIMEOUT — tracked
+	// distinctly because they need different guidance (denied needs a
+	// settings change; timeout usually just needs a weak-signal retry).
+	let locationErrorCode: number | null = $state(null);
 
-	function requestLocation() {
+	function getPosition(options: PositionOptions): Promise<GeolocationPosition> {
+		return new Promise((resolve, reject) => {
+			navigator.geolocation.getCurrentPosition(resolve, reject, options);
+		});
+	}
+
+	async function requestLocation() {
 		locating = true;
 		locationError = '';
 		locationPermissionDenied = false;
+		locationErrorCode = null;
 		// Once permission is explicitly denied, browsers refuse to
 		// re-prompt — getCurrentPosition() fails instantly and identically
 		// on every retry. Without a floor here, that reads as "the button
@@ -97,54 +108,70 @@
 		// blocked" — enforce a minimum visible delay so every click
 		// clearly does *something*, pass or fail.
 		const startedAt = Date.now();
-		function finish(apply: () => void) {
+		async function minDelay() {
 			const waitMs = Math.max(0, 500 - (Date.now() - startedAt));
-			setTimeout(apply, waitMs);
+			if (waitMs > 0) await new Promise((r) => setTimeout(r, waitMs));
 		}
 
-		navigator.geolocation?.getCurrentPosition(
-			(pos) => {
-				finish(() => {
-					deviceLat = pos.coords.latitude;
-					deviceLng = pos.coords.longitude;
-					accuracyM = pos.coords.accuracy;
-					pinLat = deviceLat;
-					pinLng = deviceLng;
-					locating = false;
-					// A prior failed submit attempt can leave a stale
-					// "Location not available" banner up — clear it now
-					// that we actually have a fix, don't leave it stuck.
-					if (result && !result.ok) result = null;
-					// Auto-pick the reporter's actual state instead of
-					// leaving the alphabetically-first one selected — was
-					// showing "Abia" for everyone regardless of where they
-					// actually were, which is just wrong, not a style choice.
-					supabase
-						.rpc('nearest_admin_level1', { p_country_slug: 'Nig', p_lat: deviceLat, p_lng: deviceLng })
-						.then(({ data }) => {
-							const match = data?.[0];
-							if (match) level1Id = match.id;
-						});
+		try {
+			let pos: GeolocationPosition;
+			try {
+				// A real GPS fix (not wifi/cell-based) can genuinely take
+				// longer than a few seconds, especially indoors or with a
+				// weak signal — 10s was too short and was the actual cause
+				// of "allowed location, still doesn't work" reports.
+				pos = await getPosition({ enableHighAccuracy: true, timeout: 20000, maximumAge: 10000 });
+			} catch (err) {
+				const e = err as GeolocationPositionError;
+				if (e.code === e.TIMEOUT) {
+					// Don't fail outright on a high-accuracy timeout — fall
+					// back to a faster, coarser (wifi/cell-based) fix. Less
+					// precise, but the existing geofence already tolerates
+					// up to the device's own reported accuracy, so a coarser
+					// fix is still usable rather than blocking submission.
+					pos = await getPosition({ enableHighAccuracy: false, timeout: 15000, maximumAge: 30000 });
+				} else {
+					throw e;
+				}
+			}
+			await minDelay();
+			deviceLat = pos.coords.latitude;
+			deviceLng = pos.coords.longitude;
+			accuracyM = pos.coords.accuracy;
+			pinLat = deviceLat;
+			pinLng = deviceLng;
+			locating = false;
+			// A prior failed submit attempt can leave a stale
+			// "Location not available" banner up — clear it now that we
+			// actually have a fix, don't leave it stuck.
+			if (result && !result.ok) result = null;
+			// Auto-pick the reporter's actual state instead of leaving the
+			// alphabetically-first one selected — was showing "Abia" for
+			// everyone regardless of where they actually were, which is
+			// just wrong, not a style choice.
+			supabase
+				.rpc('nearest_admin_level1', { p_country_slug: 'Nig', p_lat: deviceLat, p_lng: deviceLng })
+				.then(({ data }) => {
+					const match = data?.[0];
+					if (match) level1Id = match.id;
 				});
-			},
-			(err) => {
-				finish(() => {
-					locationError = err.message;
-					locationPermissionDenied = err.code === err.PERMISSION_DENIED;
-					locating = false;
-					retryCount += 1;
-					// A dropped pin still needs somewhere to start — this is
-					// only ever a map center, never used as the device fix
-					// (deviceLat/deviceLng stay null), so it can't bypass the
-					// geofence check in submit().
-					if (pinLat === null) {
-						pinLat = 6.5244;
-						pinLng = 3.3792;
-					}
-				});
-			},
-			{ enableHighAccuracy: true, timeout: 10000 },
-		);
+		} catch (err) {
+			await minDelay();
+			const e = err as GeolocationPositionError;
+			locationError = e.message;
+			locationErrorCode = e.code;
+			locationPermissionDenied = e.code === e.PERMISSION_DENIED;
+			locating = false;
+			retryCount += 1;
+			// A dropped pin still needs somewhere to start — this is only
+			// ever a map center, never used as the device fix
+			// (deviceLat/deviceLng stay null), so it can't bypass the
+			// geofence check in submit().
+			if (pinLat === null) {
+				pinLat = 6.5244;
+				pinLng = 3.3792;
+			}
+		}
 	}
 	requestLocation();
 
@@ -450,7 +477,7 @@
 					<h2 class="text-2xl font-semibold mb-1 font-display">Where is this?</h2>
 					<p class="text-sm text-muted-foreground mb-4">
 						{#if locating}
-							{retryCount > 0 ? 'Checking again…' : 'Getting your location…'}
+							{retryCount > 0 ? 'Checking again…' : 'Getting your location…'} This can take up to 30s with a weak signal.
 						{:else if deviceLat !== null}
 							Drag the pin to the exact spot. Accuracy: {Math.round(accuracyM ?? 0)}m
 						{/if}
@@ -464,13 +491,18 @@
 									bar → <strong>Website Settings</strong> → <strong>Location</strong> → Allow, or check
 									<strong>Settings → Safari → Location</strong>. On Android: check your browser's site permissions.
 									After changing it, tap below — a page reload may be needed for the change to take effect.
+								{:else if locationErrorCode === 3}
+									Couldn't get a GPS fix in time — usually a weak signal. Try moving outdoors or near a window, make
+									sure Location Services is on for your phone generally (not just this site), then try again.
 								{:else}
 									Couldn't get your location ({locationError}). A live location fix is required to submit — it's
 									what proves you're actually at the spot you're reporting.
 								{/if}
 							</p>
 							{#if retryCount > 0}
-								<p class="text-xs font-semibold text-amber-800 mb-2">Still blocked (checked {retryCount} time{retryCount === 1 ? '' : 's'}).</p>
+								<p class="text-xs font-semibold text-amber-800 mb-2">
+									Still no fix (tried {retryCount} time{retryCount === 1 ? '' : 's'}).
+								</p>
 							{/if}
 							<button onclick={requestLocation} class="text-xs font-semibold text-amber-800 underline">
 								{locationPermissionDenied ? "I've changed the setting — check again" : 'Try again'}
