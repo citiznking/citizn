@@ -2,7 +2,7 @@
 	import { onMount } from 'svelte';
 	import { goto } from '$app/navigation';
 	import { supabase } from '$lib/supabase';
-	import { REPORT_CATEGORIES } from '$lib/reports';
+	import { CATEGORIES } from '$lib/design/categories';
 	import { PUBLIC_SUPABASE_URL } from '$env/static/public';
 
 	let levels: { id: string; name: string }[] = $state([]);
@@ -46,11 +46,7 @@
 			}
 			const res = await fetch(`${PUBLIC_SUPABASE_URL}/functions/v1/add-budget-entry`, {
 				method: 'POST',
-				headers: {
-					'Content-Type': 'application/json',
-					apikey: import.meta.env.PUBLIC_SUPABASE_PUBLISHABLE_KEY,
-					Authorization: `Bearer ${token}`,
-				},
+				headers: { 'Content-Type': 'application/json', apikey: import.meta.env.PUBLIC_SUPABASE_PUBLISHABLE_KEY, Authorization: `Bearer ${token}` },
 				body: JSON.stringify({
 					platform,
 					url: sourceUrl || undefined,
@@ -79,69 +75,71 @@
 	}
 </script>
 
-<h1>Add a state budget line</h1>
-<p><a href="/mod">&larr; moderation queue</a></p>
+<a href="/mod" class="text-sm text-primary font-medium">&larr; moderation queue</a>
+<h1 class="text-2xl font-semibold font-display mt-3 mb-5">Add a state budget line</h1>
 
-<form onsubmit={submit}>
-	<label>
-		State
-		<select bind:value={level1Id} required>
+<form onsubmit={submit} class="space-y-4 max-w-md">
+	<label class="block">
+		<span class="block text-sm font-medium text-foreground mb-1.5">State</span>
+		<select bind:value={level1Id} required class="w-full bg-input-background border border-border rounded-xl px-4 py-2.5 text-sm">
 			{#each levels as l (l.id)}
 				<option value={l.id}>{l.name}</option>
 			{/each}
 		</select>
 	</label>
 
-	<label>
-		Fiscal year
-		<input type="number" bind:value={fiscalYear} required />
+	<label class="block">
+		<span class="block text-sm font-medium text-foreground mb-1.5">Fiscal year</span>
+		<input type="number" bind:value={fiscalYear} required class="w-full bg-input-background border border-border rounded-xl px-4 py-2.5 text-sm" />
 	</label>
 
-	<label>
-		Sector
-		<select bind:value={sector} required>
-			{#each REPORT_CATEGORIES as c (c.value)}
-				<option value={c.value}>{c.label}</option>
+	<label class="block">
+		<span class="block text-sm font-medium text-foreground mb-1.5">Sector</span>
+		<select bind:value={sector} required class="w-full bg-input-background border border-border rounded-xl px-4 py-2.5 text-sm">
+			{#each CATEGORIES as c (c.id)}
+				<option value={c.id}>{c.label}</option>
 			{/each}
 		</select>
 	</label>
 
-	<label>
-		Line item
-		<input type="text" bind:value={lineItem} required placeholder="e.g. Rural road rehabilitation" />
+	<label class="block">
+		<span class="block text-sm font-medium text-foreground mb-1.5">Line item</span>
+		<input type="text" bind:value={lineItem} required placeholder="e.g. Rural road rehabilitation" class="w-full bg-input-background border border-border rounded-xl px-4 py-2.5 text-sm" />
 	</label>
 
-	<label>
-		Approved amount (NGN)
-		<input type="number" bind:value={approvedAmount} required min="0" step="0.01" />
+	<label class="block">
+		<span class="block text-sm font-medium text-foreground mb-1.5">Approved amount (NGN)</span>
+		<input type="number" bind:value={approvedAmount} required min="0" step="0.01" class="w-full bg-input-background border border-border rounded-xl px-4 py-2.5 text-sm" />
 	</label>
 
-	<label>
-		Source platform
-		<input type="text" bind:value={platform} required placeholder="e.g. State Ministry of Finance" />
+	<label class="block">
+		<span class="block text-sm font-medium text-foreground mb-1.5">Source platform</span>
+		<input type="text" bind:value={platform} required placeholder="e.g. State Ministry of Finance" class="w-full bg-input-background border border-border rounded-xl px-4 py-2.5 text-sm" />
 	</label>
 
-	<label>
-		Source URL (optional)
-		<input type="url" bind:value={sourceUrl} placeholder="https://…" />
+	<label class="block">
+		<span class="block text-sm font-medium text-foreground mb-1.5">Source URL (optional)</span>
+		<input type="url" bind:value={sourceUrl} placeholder="https://…" class="w-full bg-input-background border border-border rounded-xl px-4 py-2.5 text-sm" />
 	</label>
 
-	<label>
-		How was this retrieved?
-		<select bind:value={method}>
+	<label class="block">
+		<span class="block text-sm font-medium text-foreground mb-1.5">How was this retrieved?</span>
+		<select bind:value={method} class="w-full bg-input-background border border-border rounded-xl px-4 py-2.5 text-sm">
 			<option value="manual">Manual entry</option>
 			<option value="scrape">Scraped</option>
 			<option value="api">API</option>
 		</select>
 	</label>
 
-	<button type="submit" disabled={submitting}>{submitting ? 'Saving…' : 'Add'}</button>
+	<button type="submit" disabled={submitting} class="w-full bg-primary text-primary-foreground py-3.5 rounded-xl font-semibold text-sm disabled:opacity-50">
+		{submitting ? 'Saving…' : 'Add'}
+	</button>
 </form>
 
 {#if result}
 	{#if result.ok}
-		<p role="status">Added.</p>
+		<p class="text-sm text-emerald-700 mt-3">Added.</p>
 	{:else}
-		<p role="alert">{result.error}</p>
+		<p class="text-sm text-destructive mt-3">{result.error}</p>
 	{/if}
 {/if}

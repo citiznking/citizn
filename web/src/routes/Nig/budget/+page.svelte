@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { supabase } from '$lib/supabase';
-	import { REPORT_CATEGORIES } from '$lib/reports';
+	import { CATEGORIES } from '$lib/design/categories';
 
 	interface Line {
 		id: string;
@@ -18,7 +18,7 @@
 	let loading = $state(true);
 
 	function sectorLabel(v: string) {
-		return REPORT_CATEGORIES.find((c) => c.value === v)?.label ?? v;
+		return CATEGORIES.find((c) => c.id === v)?.label ?? v;
 	}
 
 	async function loadLines() {
@@ -49,19 +49,20 @@
 	});
 </script>
 
-<h1>State budgets</h1>
-<p>
+<a href="/Nig" class="text-sm text-primary font-medium">&larr; Back to Citizn</a>
+
+<h1 class="text-2xl font-semibold font-display mt-3 mb-1">State budgets</h1>
+<p class="text-sm text-muted-foreground mb-1 leading-relaxed">
 	Approved state budget line items by sector, as published by each state — compare against what's
 	actually reported broken on the ground.
 </p>
-<p><small>
-	LGA-level federal allocation figures aren't available yet — that needs LGA reference data this
-	build doesn't have seeded.
-</small></p>
+<p class="text-xs text-muted-foreground mb-5">
+	LGA-level federal allocation figures aren't available yet — that needs LGA reference data this build doesn't have seeded.
+</p>
 
-<label>
-	State
-	<select bind:value={level1Id} onchange={loadLines}>
+<label class="block mb-5 max-w-xs">
+	<span class="block text-sm font-medium text-foreground mb-1.5">State</span>
+	<select bind:value={level1Id} onchange={loadLines} class="w-full bg-input-background border border-border rounded-xl px-4 py-2.5 text-sm">
 		{#each levels as l (l.id)}
 			<option value={l.id}>{l.name}</option>
 		{/each}
@@ -69,36 +70,38 @@
 </label>
 
 {#if loading}
-	<p>Loading…</p>
+	<p class="text-sm text-muted-foreground">Loading…</p>
 {:else if lines.length === 0}
-	<p>No budget data recorded for this state yet.</p>
+	<p class="text-sm text-muted-foreground">No budget data recorded for this state yet.</p>
 {:else}
-	<table>
-		<thead>
-			<tr>
-				<th>Year</th>
-				<th>Sector</th>
-				<th>Line item</th>
-				<th>Approved amount</th>
-				<th>Source</th>
-			</tr>
-		</thead>
-		<tbody>
-			{#each lines as l (l.id)}
-				<tr>
-					<td>{l.fiscal_year}</td>
-					<td>{sectorLabel(l.sector)}</td>
-					<td>{l.line_item}</td>
-					<td>{l.approved_amount.toLocaleString()}</td>
-					<td>
-						{#if l.budget_sources?.url}
-							<a href={l.budget_sources.url} target="_blank" rel="noreferrer">{l.budget_sources.platform}</a>
-						{:else}
-							{l.budget_sources?.platform ?? ''}
-						{/if}
-					</td>
+	<div class="overflow-x-auto border border-border rounded-2xl">
+		<table class="w-full text-sm">
+			<thead>
+				<tr class="border-b border-border bg-muted/50 text-left">
+					<th class="px-4 py-2.5 font-medium text-muted-foreground">Year</th>
+					<th class="px-4 py-2.5 font-medium text-muted-foreground">Sector</th>
+					<th class="px-4 py-2.5 font-medium text-muted-foreground">Line item</th>
+					<th class="px-4 py-2.5 font-medium text-muted-foreground text-right">Amount</th>
+					<th class="px-4 py-2.5 font-medium text-muted-foreground">Source</th>
 				</tr>
-			{/each}
-		</tbody>
-	</table>
+			</thead>
+			<tbody>
+				{#each lines as l (l.id)}
+					<tr class="border-b border-border last:border-0">
+						<td class="px-4 py-2.5 font-code">{l.fiscal_year}</td>
+						<td class="px-4 py-2.5">{sectorLabel(l.sector)}</td>
+						<td class="px-4 py-2.5">{l.line_item}</td>
+						<td class="px-4 py-2.5 text-right font-code">{l.approved_amount.toLocaleString()}</td>
+						<td class="px-4 py-2.5">
+							{#if l.budget_sources?.url}
+								<a href={l.budget_sources.url} target="_blank" rel="noreferrer" class="text-primary">{l.budget_sources.platform}</a>
+							{:else}
+								{l.budget_sources?.platform ?? ''}
+							{/if}
+						</td>
+					</tr>
+				{/each}
+			</tbody>
+		</table>
+	</div>
 {/if}

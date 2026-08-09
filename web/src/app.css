@@ -1,0 +1,115 @@
+@import url('https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,300;0,9..144,500;0,9..144,600;0,9..144,700;1,9..144,400;1,9..144,600&family=Figtree:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap');
+@import 'tailwindcss';
+
+@custom-variant dark (&:is(.dark *));
+
+:root {
+	--font-size: 16px;
+	--background: #EFF4FD;
+	--foreground: #0A1628;
+	--card: #FFFFFF;
+	--card-foreground: #111D35;
+	--popover: #FFFFFF;
+	--popover-foreground: #0A1628;
+	--primary: #173E8C;
+	--primary-foreground: #EFF4FD;
+	--secondary: #E0EAF8;
+	--secondary-foreground: #173E8C;
+	--muted: #E5EDF8;
+	--muted-foreground: #5A6E8C;
+	--accent: #1E56D8;
+	--accent-foreground: #FFFFFF;
+	--destructive: #C11C3A;
+	--destructive-foreground: #FFFFFF;
+	--border: rgba(23, 62, 140, 0.14);
+	--input: transparent;
+	--input-background: #E8F0FC;
+	--switch-background: #B0C4E0;
+	--font-weight-medium: 500;
+	--font-weight-normal: 400;
+	--ring: #1E56D8;
+	--radius: 0.625rem;
+}
+
+.dark {
+	--background: #080F20;
+	--foreground: #D8E4F5;
+	--card: #0C1A32;
+	--card-foreground: #CCD9F0;
+	--popover: #0C1A32;
+	--popover-foreground: #D8E4F5;
+	--primary: #4A7CEB;
+	--primary-foreground: #080F20;
+	--secondary: #102040;
+	--secondary-foreground: #89B0DC;
+	--muted: #0F1D38;
+	--muted-foreground: #5E7A9C;
+	--accent: #5B8AF5;
+	--accent-foreground: #080F20;
+	--destructive: #F44C6D;
+	--destructive-foreground: #FFFFFF;
+	--border: rgba(74, 124, 235, 0.18);
+	--input: rgba(74, 124, 235, 0.10);
+	--input-background: #0F1D38;
+	--switch-background: #1E3A64;
+	--ring: #4A7CEB;
+}
+
+@theme inline {
+	--color-background: var(--background);
+	--color-foreground: var(--foreground);
+	--color-card: var(--card);
+	--color-card-foreground: var(--card-foreground);
+	--color-popover: var(--popover);
+	--color-popover-foreground: var(--popover-foreground);
+	--color-primary: var(--primary);
+	--color-primary-foreground: var(--primary-foreground);
+	--color-secondary: var(--secondary);
+	--color-secondary-foreground: var(--secondary-foreground);
+	--color-muted: var(--muted);
+	--color-muted-foreground: var(--muted-foreground);
+	--color-accent: var(--accent);
+	--color-accent-foreground: var(--accent-foreground);
+	--color-destructive: var(--destructive);
+	--color-destructive-foreground: var(--destructive-foreground);
+	--color-border: var(--border);
+	--color-input: var(--input);
+	--color-input-background: var(--input-background);
+	--color-switch-background: var(--switch-background);
+	--color-ring: var(--ring);
+	--radius-sm: calc(var(--radius) - 4px);
+	--radius-md: calc(var(--radius) - 2px);
+	--radius-lg: var(--radius);
+	--radius-xl: calc(var(--radius) + 4px);
+}
+
+@layer base {
+	* {
+		@apply border-border outline-ring/50;
+	}
+	body {
+		@apply bg-background text-foreground;
+	}
+	html {
+		font-size: var(--font-size);
+		font-family: 'Figtree', system-ui, sans-serif;
+	}
+	h1, h2, h3, h4 {
+		font-weight: var(--font-weight-medium);
+		line-height: 1.5;
+	}
+	label, button {
+		font-size: 1rem;
+		font-weight: var(--font-weight-medium);
+		line-height: 1.5;
+	}
+	input {
+		font-weight: var(--font-weight-normal);
+		line-height: 1.5;
+	}
+}
+
+.font-display { font-family: 'Fraunces', Georgia, serif; }
+.font-code { font-family: 'JetBrains Mono', 'Courier New', monospace; }
+.scrollbar-none { scrollbar-width: none; }
+.scrollbar-none::-webkit-scrollbar { display: none; }
