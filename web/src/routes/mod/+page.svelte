@@ -96,7 +96,7 @@
 
 <h1>Moderation queue</h1>
 <p>
-	{userEmail} · <button onclick={logout}>Sign out</button>
+	{userEmail} · <a href="/mod/budget">Add budget data</a> · <button onclick={logout}>Sign out</button>
 </p>
 
 {#if loading}
