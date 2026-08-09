@@ -130,7 +130,7 @@
 		<ul>
 			{#each reports as r (r.id)}
 				<li>
-					<strong>{r.category}</strong> — {r.severity}
+					<a href="/Nig/reports/{r.id}"><strong>{r.category}</strong> — {r.severity}</a>
 					{#if r.description}<br />{r.description}{/if}
 					<br /><small>{new Date(r.created_at).toLocaleString()}</small>
 				</li>
