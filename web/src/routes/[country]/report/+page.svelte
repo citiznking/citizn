@@ -8,7 +8,7 @@
 	import { getSessionUuid } from '$lib/session';
 	import { CATEGORIES, SENSITIVE_CATEGORIES, getCategory } from '$lib/design/categories';
 	import { SEVERITY_ORDER, SEVERITY } from '$lib/design/severity';
-	import { PUBLIC_SUPABASE_URL } from '$env/static/public';
+	import { PUBLIC_SUPABASE_URL, PUBLIC_MAPTILER_API_KEY } from '$env/static/public';
 	import ChevronLeft from 'lucide-svelte/icons/chevron-left';
 	import Lock from 'lucide-svelte/icons/lock';
 	import X from 'lucide-svelte/icons/x';
@@ -19,10 +19,13 @@
 	import ArrowRight from 'lucide-svelte/icons/arrow-right';
 	import CheckCircle2 from 'lucide-svelte/icons/check-circle-2';
 	import Share2 from 'lucide-svelte/icons/share-2';
+	import Search from 'lucide-svelte/icons/search';
 
 	const country = page.params.country!;
 	const campaignSlug = page.url.searchParams.get('campaign');
 	const STEP_COUNT = 5;
+	const COUNTRY_ISO2: Record<string, string> = { Nig: 'ng', Gha: 'gh', Ken: 'ke' };
+	const MIN_GEOFENCE_RADIUS_M = 50;
 	const MAX_VIDEO_DURATION_S = 140;
 	const MAX_FILE_SIZE = 83886080; // 80MB
 
@@ -57,6 +60,88 @@
 	let mapContainer: HTMLDivElement | undefined = $state();
 	let map: MlMap | undefined;
 	let marker: Marker | undefined;
+
+	let searchQuery = $state('');
+	let searchResults: { id: string; label: string; lat: number; lng: number }[] = $state([]);
+	let searching = $state(false);
+	let searchDebounce: ReturnType<typeof setTimeout> | undefined;
+
+	function haversineM(lat1: number, lng1: number, lat2: number, lng2: number): number {
+		const R = 6371000;
+		const toRad = (d: number) => (d * Math.PI) / 180;
+		const dLat = toRad(lat2 - lat1);
+		const dLng = toRad(lng2 - lng1);
+		const a =
+			Math.sin(dLat / 2) ** 2 +
+			Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLng / 2) ** 2;
+		return 2 * R * Math.asin(Math.sqrt(a));
+	}
+
+	let geofenceRadiusM = $derived(Math.max(MIN_GEOFENCE_RADIUS_M, accuracyM ?? 0));
+	let pinDeviceDistanceM = $derived(
+		deviceLat !== null && deviceLng !== null && pinLat !== null && pinLng !== null
+			? haversineM(deviceLat, deviceLng, pinLat, pinLng)
+			: null,
+	);
+	// Only meaningful once there's a real device fix to compare against —
+	// before that, the pin is just sitting at a fallback map center with
+	// nothing to be "too far" from yet.
+	let pinOutsideGeofence = $derived(deviceLat !== null && pinDeviceDistanceM !== null && pinDeviceDistanceM > geofenceRadiusM);
+
+	// Shared by both the draggable marker and search-result selection —
+	// keeps the pin, the map view, and the auto-detected state in sync
+	// regardless of how the pin got moved. Never touches deviceLat/
+	// deviceLng: those stay the real GPS fix so the server-side geofence
+	// check (proof the reporter is actually there) can't be bypassed by
+	// searching or dragging to somewhere else entirely.
+	function movePin(lat: number, lng: number, pan = false) {
+		pinLat = lat;
+		pinLng = lng;
+		if (map && pan) map.flyTo({ center: [lng, lat], zoom: Math.max(map.getZoom(), 15) });
+		marker?.setLngLat([lng, lat]);
+		supabase
+			.rpc('nearest_admin_level1', { p_country_slug: country, p_lat: lat, p_lng: lng })
+			.then(({ data }) => {
+				const match = data?.[0];
+				if (match) level1Id = match.id;
+			});
+	}
+
+	function onSearchInput(q: string) {
+		searchQuery = q;
+		clearTimeout(searchDebounce);
+		if (q.trim().length < 3) {
+			searchResults = [];
+			return;
+		}
+		searchDebounce = setTimeout(async () => {
+			searching = true;
+			try {
+				const params = new URLSearchParams({ key: PUBLIC_MAPTILER_API_KEY, limit: '5' });
+				const iso2 = COUNTRY_ISO2[country];
+				if (iso2) params.set('country', iso2);
+				if (deviceLat !== null && deviceLng !== null) params.set('proximity', `${deviceLng},${deviceLat}`);
+				const res = await fetch(`https://api.maptiler.com/geocoding/${encodeURIComponent(q)}.json?${params}`);
+				const body = await res.json();
+				searchResults = (body.features ?? []).map((f: any) => ({
+					id: f.id,
+					label: f.place_name,
+					lng: f.center[0],
+					lat: f.center[1],
+				}));
+			} catch {
+				searchResults = [];
+			} finally {
+				searching = false;
+			}
+		}, 400);
+	}
+
+	function selectSearchResult(r: { id: string; label: string; lat: number; lng: number }) {
+		movePin(r.lat, r.lng, true);
+		searchQuery = r.label;
+		searchResults = [];
+	}
 
 	let submitting = $state(false);
 	let mediaUploading = $state(false);
@@ -183,8 +268,7 @@
 			marker = new Marker({ draggable: true }).setLngLat([pinLng, pinLat]).addTo(map);
 			marker.on('dragend', () => {
 				const { lat, lng } = marker!.getLngLat();
-				pinLat = lat;
-				pinLng = lng;
+				movePin(lat, lng);
 			});
 		}
 	});
@@ -263,6 +347,10 @@
 	async function submit() {
 		if (deviceLat === null || deviceLng === null || accuracyM === null || pinLat === null || pinLng === null) {
 			result = { ok: false, error: 'Location not available — allow location access and retry.' };
+			return;
+		}
+		if (pinOutsideGeofence) {
+			result = { ok: false, error: 'The pin is too far from your verified location — move it closer and try again.' };
 			return;
 		}
 		submitting = true;
@@ -509,12 +597,47 @@
 					</label>
 
 					{#if !locating}
-						<div bind:this={mapContainer} class="rounded-2xl overflow-hidden border border-border mb-4 h-64"></div>
+						<div class="relative mb-3">
+							<div class="relative">
+								<Search size={15} class="absolute left-3.5 top-1/2 -translate-y-1/2 text-muted-foreground" />
+								<input
+									type="text"
+									value={searchQuery}
+									oninput={(e) => onSearchInput((e.currentTarget as HTMLInputElement).value)}
+									placeholder="Search for an address or place…"
+									class="w-full bg-input-background border border-border rounded-xl pl-9 pr-4 py-3 text-sm"
+								/>
+							</div>
+							{#if searchResults.length > 0}
+								<div class="absolute z-20 left-0 right-0 mt-1 bg-card border border-border rounded-xl shadow-lg overflow-hidden">
+									{#each searchResults as r (r.id)}
+										<button
+											type="button"
+											onclick={() => selectSearchResult(r)}
+											class="w-full text-left px-4 py-2.5 text-sm active:bg-muted border-b border-border last:border-0"
+										>
+											{r.label}
+										</button>
+									{/each}
+								</div>
+							{/if}
+						</div>
+
+						<div bind:this={mapContainer} class="rounded-2xl overflow-hidden border border-border mb-2 h-64"></div>
+
+						{#if pinOutsideGeofence}
+							<p class="text-xs text-destructive mb-4">
+								This pin is {Math.round(pinDeviceDistanceM ?? 0)}m from your verified location — reports must stay within
+								~{Math.round(geofenceRadiusM)}m of where you actually are. Drag it closer or search again.
+							</p>
+						{:else if deviceLat !== null}
+							<p class="text-xs text-muted-foreground mb-4">Drag the pin, or search above, to fine-tune the exact spot.</p>
+						{/if}
 					{/if}
 
 					<button
 						onclick={() => (step = 3)}
-						disabled={locating || deviceLat === null}
+						disabled={locating || deviceLat === null || pinOutsideGeofence}
 						class="w-full bg-primary text-primary-foreground py-4 rounded-2xl font-semibold text-sm flex items-center justify-center gap-2 disabled:opacity-50"
 					>
 						Confirm location <ArrowRight size={16} />
